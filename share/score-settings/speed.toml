@@ -1,0 +1,9 @@
+[module]
+description = "Measures speed of connection, gives score"
+
+corefactor = false
+
+minimum = "20ms"
+
+weight = 1.0
+

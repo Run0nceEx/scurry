@@ -11,4 +11,4 @@ edition = "2018"
 
 [dependencies.async-std]
 version = "^1.5.0"
-features = ["attributes"]
+features = ["unstable", "attributes"]

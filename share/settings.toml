@@ -1,0 +1,37 @@
+[app]
+timeout = 60
+
+
+
+[orchestrator]
+use-orchestrator = false
+zookeeper = "128.0.0.1:2818"
+
+
+[database]
+/// postgresql or cassandra 
+engine = "postgresql"
+timeout = 60
+
+/// scoring
+/// scoring is an internal system which scores IPs 0-100 (Represented as precentage) 
+/// that adds preference to which IPs to store in the database
+/// this will be multiplied against all weights
+/// this maybe used to lower their overall sensitivity
+/// score = (tolerance-weight * arg(score * weight ..) / success_cons / fail_cons) * 100
+/// score = (tolerance-weight * arg(score * weight ..) / $corefactor) * 100
+
+
+
+tolerance-weight = 1.0
+
+/// this will be multipled against its score, 
+/// then averaged against their total success rate
+/// speed-score * speed-weight / 100 * (success_cons / fail_cons)
+/// Placing `0` as the any input marked by `weight` or akin (`speed-weight`, `speed-min`)
+/// will automatically remove it from the equation
+
+
+
+
+
