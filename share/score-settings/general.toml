@@ -1,0 +1,7 @@
+[module]
+description = "Gives a tolerance to the main score"
+corefactor = true
+weight = 1.0
+
+[settings]
+tolerance = "tolerance/general.json"
