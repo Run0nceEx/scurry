@@ -1,5 +1,12 @@
 [module]
-description = "Measures speed of connection, gives score"
+description = "collects information from sources that contain ip black lists"
 corefactor = false
 weight = 1.0
 
+[settings]
+
+/// preflight-score allows the system to rate
+/// the ip based on county as the corefactor
+/// before ever connecting to it
+preflight-score = true
+list = "tolerance/blacklist.list"

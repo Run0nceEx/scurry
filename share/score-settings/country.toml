@@ -1,5 +1,0 @@
-[module]
-description = "Measures speed of connection, gives score"
-corefactor = false
-weight = 1.0
-
