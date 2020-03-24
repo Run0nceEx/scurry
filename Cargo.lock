@@ -439,10 +439,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "px-daemon"
+name = "px-compat"
 version = "0.1.0"
+
+[[package]]
+name = "px-daemon"
+version = "0.0.0"
 dependencies = [
  "async-std",
+ "px-compat",
 ]
 
 [[package]]

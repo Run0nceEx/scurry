@@ -1,6 +1,0 @@
-[module]
-description = "Measures speed of connection, gives score"
-corefactor = true
-weight = 1.0
-
-tolerance = "tolerance/lossrate.json"
