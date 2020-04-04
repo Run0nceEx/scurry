@@ -1,0 +1,38 @@
+[package]
+name = "pxcore"
+version = "0.0.0"
+authors = ["Skarlett"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+
+[features]
+default = []
+logging = ["tracing"]
+
+
+# [dependencies.tokio-socks]
+# version = "0.2.1"
+
+[dependencies.tokio-socks]
+version = "0.2.1"
+
+[dependencies.async-h1]
+version = "*"
+
+[dependencies.http-types]
+version = "*"
+
+[dependencies.tracing]
+version = "0.1.13"
+optional = true
+
+
+# Core async engine
+[dependencies.tokio]
+version = "0.2"
+features = ["rt-core", "sync", "tcp", "parking_lot"]
+
+[dependencies.futures]
+version = "0.3.4"
