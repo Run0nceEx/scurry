@@ -35,7 +35,7 @@ optional = true
 # Core async engine
 [dependencies.tokio]
 version = "0.2"
-features = ["rt-core", "sync", "tcp", "parking_lot"]
+features = ["rt-core", "sync", "tcp", "parking_lot", "time"]
 
 [dependencies.futures]
 version = "0.3.4"

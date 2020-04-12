@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-#![feature(async_closure)]
+#![allow(non_camel_case_types)]
 
 mod score;
 mod protocols;
