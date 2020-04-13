@@ -31,7 +31,6 @@ version = "1.1.0"
 version = "0.1.13"
 optional = true
 
-
 # Core async engine
 [dependencies.tokio]
 version = "0.2"

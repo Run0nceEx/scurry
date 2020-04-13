@@ -1,8 +1,8 @@
 use std::{
     time::{Instant, Duration},
     collections::HashMap,
+    pin::Pin
 };
-
 
 use tokio::{
     task::JoinHandle,
@@ -10,9 +10,9 @@ use tokio::{
     time::timeout
 };
 
-
 use async_trait::async_trait;
-
+use futures::{task::Poll, future::poll_fn};
+use core::future::Future;
 
 // Command run on (CRON)
 #[async_trait]
@@ -22,7 +22,6 @@ pub trait CRON<R>: Sized {
 
     /// check if command should be ran
     fn check(&self) -> bool;
-
 
     fn timeout_ms(&self) -> u64 {
         3000
@@ -67,7 +66,6 @@ where
 
             }
         }
-
         return ret;
     }
 
@@ -76,22 +74,33 @@ where
     }
 }
 
-#[async_trait]
-trait ScheduleJoin<T>: Sync + Send
-where 
-    T: 'static + Send + Sync
-{
-    fn get_handles(&self) -> Vec<JoinHandle<Vec<T>>>;
 
-    async fn join_handles(&mut self) -> Vec<T> {
-        let mut ret: Vec<T> = Vec::new();
-        for x in self.get_handles() {
-            if let Ok(jobs) = x.await {
-                ret.extend(jobs);
+async fn join_handles<T>(handles: &mut [JoinHandle<Vec<T>>]) -> Vec<T> 
+{
+    let mut ret: Vec<T> = Vec::new();
+    let mut pops = Vec::new();
+    let mut i = 0;
+
+    for mut x in handles {
+        let polled = poll_fn(|ctx| {
+            match Pin::new(&mut x).poll(ctx) {
+                Poll::Ready(val) => Poll::Ready(Some(val).transpose()),
+                Poll::Pending => Poll::Ready(Ok(None)),
             }
+        }).await.expect("Panic in task");
+
+        if let Some(jobs) = polled {
+            ret.extend(jobs);
         }
-        ret
+        pops.push(i);
+        i += 1;
     }
+
+    for i in pops {
+        ret.remove(i);
+    }
+
+    ret
 }
 
 
