@@ -4,6 +4,8 @@ pub trait Metric {
     fn get_weight(&self) -> f32;
 }
 
+
+// multi collector and aggregator
 pub struct ScoreData {
     data_points: Vec<Box<dyn Metric>>,
     weight: f32

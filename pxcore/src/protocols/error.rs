@@ -1,9 +1,9 @@
 use tokio::prelude::*;
+use tokio::io;
 
 pub enum Error {
     io(io::Error),
-    socks(tokio_socks::Error),
-    http(http_types::Error)
+    http(httparse::Error)
 }
 
 impl From<io::Error> for Error {
@@ -12,14 +12,8 @@ impl From<io::Error> for Error {
     }
 }
 
-impl From<tokio_socks::Error> for Error {
-    fn from(x: tokio_socks::Error) -> Error {
-        Error::socks(x)
-    }
-}
-
-impl From<http_types::Error> for Error {
-    fn from(x: http_types::Error) -> Error {
+impl From<httparse::Error> for Error {
+    fn from(x: httparse::Error) -> Error {
         Error::http(x)
     }
 }

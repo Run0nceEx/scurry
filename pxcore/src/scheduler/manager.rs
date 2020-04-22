@@ -1,20 +1,15 @@
 use std::{
     time::{Instant, Duration},
-    collections::HashMap,
-    pin::Pin
 };
 
 use tokio::{
-    task::JoinHandle,
     sync::mpsc,
     time::timeout
 };
 
 use async_trait::async_trait;
-use futures::{task::Poll, future::poll_fn};
-use core::future::Future;
 
-// Command run on (CRON)
+/// Command run on (CRON)
 #[async_trait]
 pub trait CRON<R>: Sized {
     /// Run function, and then append to parent if more jobs are needed
@@ -23,8 +18,9 @@ pub trait CRON<R>: Sized {
     /// check if command should be ran
     fn check(&self) -> bool;
 
-    fn timeout_ms(&self) -> u64 {
-        3000
+    /// Times out task if result takes too long - default time is 1 minute
+    fn timeout(&self) -> Duration {
+        Duration::from_secs(60)
     }
 }
 
@@ -32,114 +28,83 @@ pub trait CRON<R>: Sized {
 pub struct Scheduler<T, R>
 {
     val_tx: mpsc::Sender<R>,
-    commands: HashMap<uuid::Uuid, T>,
+    job_tx: mpsc::Sender<Vec<T>>,
+    job_rx: mpsc::Receiver<Vec<T>>,
+    commands: Vec<T>
 }
 
 impl<T, R> Scheduler<T, R>
 where
     R: Sync + Send + Copy + 'static,
     T: CRON<R> + Sync + Send + 'static + Clone,
-{
-    fn run_tasks(&mut self) -> Vec<JoinHandle<Vec<T>>> {
-        let mut ret = Vec::new();
+{   
+    /// Run tasks
+    pub fn run_tasks(&mut self) {
         let commands = self.commands.clone();
-
-        for (id, command) in commands {
+        
+        let mut i = 0;
+        for command in commands {
             if command.check() {       
                 let mut vtx = self.val_tx.clone();
+                let mut jtx = self.job_tx.clone();
 
-                match self.commands.remove(&id) {
-                    Some(job) => 
-                    {
-                        ret.push(
-                            tokio::spawn(async move {
-                                if let Ok((v, jobs)) = timeout(Duration::from_secs(job.timeout_ms()), job.exec()).await {
-                                    vtx.send(v).await;
-                                    return jobs
-                                }
-                                vec![]
-                            }
-                        ));
+                let job = self.commands.remove(i);
+                tokio::spawn(async move {
+                    if let Ok((v, jobs)) = timeout(job.timeout(), job.exec()).await {
+                        
+                        if let Err(e) = vtx.send(v).await {
+                            panic!("Value TX: {}", e)
+                        }
+
+                        if let Err(e) = jtx.send(jobs).await {
+                            panic!("Jobs TX: {}", e)
+                        }
+
                     }
-                    None => {} // Add error handle?
-                }
-
+                });
             }
+            i += 1;
         }
-        return ret;
     }
 
-    fn new() -> (Self, mpsc::Receiver<R>) {
-        unimplemented!()
+    pub fn new() -> (Self, mpsc::Receiver<R>) {
+        let (vtx, vrx) = mpsc::channel(1024);
+        let (jtx, jrx) = mpsc::channel(1024);
+        
+        let schedule = Self {
+            val_tx: vtx,
+            job_tx: jtx,
+            job_rx: jrx,
+            commands: Vec::with_capacity(1024)
+        };
+
+        (schedule, vrx)
     }
-}
 
-
-async fn join_handles<T>(handles: &mut [JoinHandle<Vec<T>>]) -> Vec<T> 
-{
-    let mut ret: Vec<T> = Vec::new();
-    let mut pops = Vec::new();
-    let mut i = 0;
-
-    for mut x in handles {
-        let polled = poll_fn(|ctx| {
-            match Pin::new(&mut x).poll(ctx) {
-                Poll::Ready(val) => Poll::Ready(Some(val).transpose()),
-                Poll::Pending => Poll::Ready(Ok(None)),
-            }
-        }).await.expect("Panic in task");
-
-        if let Some(jobs) = polled {
-            ret.extend(jobs);
+    pub async fn join_cron(&mut self) {
+        while let Some(jobs) = self.job_rx.recv().await {
+            self.commands.extend(jobs);
         }
-        pops.push(i);
-        i += 1;
-    }
-
-    for i in pops {
-        ret.remove(i);
-    }
-
-    ret
-}
-
-
-struct A {}
-
-#[async_trait]
-impl CRON<()> for A {
-    async fn exec(self) -> ((), Vec<Self>) {
-        ((), vec![])
-    }
-
-    fn check(&self) -> bool {
-        true
     }
 }
 
 
-enum Schedules {
-    ExploreNet(Scheduler<A, ()>),
+// struct A {}
 
-}
+// #[async_trait]
+// impl CRON<()> for A {
+//     async fn exec(self) -> ((), Vec<Self>) {
+//         ((), vec![])
+//     }
 
-
-// struct Manager {
-//     schedules: Vec<>
+//     fn check(&self) -> bool {
+//         true
+//     }
 // }
 
 
-
-// trait GenericConsumer {
-    
-// }
-// trait GenericSchedule {
-//     fn emit_ready<Arg, R>(&mut self) -> Vec<JobSchedule<Arg, R>>;
+// enum Schedules {
+//     ExploreNet(Scheduler<A, ()>),
 // }
 
-
-// struct Manager<T: GenericSchedule> {
-//     schedules: Vec<T>
-
-// }
 
