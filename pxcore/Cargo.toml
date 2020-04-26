@@ -35,4 +35,4 @@ version = "*"
 # Core async engine
 [dependencies.tokio]
 version = "0.2"
-features = ["rt-core", "sync", "tcp", "parking_lot", "time", "io-util", "stream"]
+features = ["rt-core", "sync", "tcp", "parking_lot", "time", "io-util", "stream", "dns"]

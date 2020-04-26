@@ -1,5 +1,5 @@
 use tokio::prelude::*;
-use super::{Scannable, Error};
+use super::Scannable;
 use tokio::net::TcpStream;
 use std::net::SocketAddr;
 
@@ -11,20 +11,36 @@ const MAX_HEADER_AMOUNT: usize = 64;
 const READ_SIZE: usize = 1024;
 const GREET: &[u8] = b"HTTP 1.1\n\rGET /\n\r";
 
-struct HttpReq {
-    addr: std::net::SocketAddr
+struct HttpReq {}
+
+enum HttpError {
+    stdio(std::io::Error),
+    tokio(tokio::io::Error),
+    parse(httparse::Error)
 }
 
+impl From<tokio::io::Error> for HttpError {
+    fn from(x: tokio::io::Error) -> Self {
+        Self::tokio(x)
+    }
+}
+
+impl From<httparse::Error> for HttpError {
+    fn from(x: httparse::Error) -> Self {
+        Self::parse(x)
+    }
+}
+
+
 #[async_trait::async_trait]
-impl Scannable<TcpStream> for HttpReq {
+impl Scannable<TcpStream, HttpError> for HttpReq {
     
-    async fn connect(&self, addr: SocketAddr) -> Result<TcpStream, Error> {
+    async fn connect(&self, addr: SocketAddr) -> Result<TcpStream, HttpError> {
         Ok(TcpStream::connect(addr).await?)
     }
 
-    async fn scan(&self, addr: SocketAddr) -> Result<bool, Error> {
-        let mut stream = self.connect(addr).await?;
-        
+    async fn scan(&self, stream: &mut TcpStream) -> Result<bool, HttpError> {
+
         stream.write(GREET).await?;
 
         let mut complete_buf = Vec::with_capacity(READ_SIZE*8);
