@@ -13,7 +13,7 @@ logging = ["tracing"]
 
 
 [dependencies.uuid]
-version = "*"
+version = "0.8.1"
 
 [dependencies.async-trait]
 version = "~0.1.30"
@@ -25,12 +25,18 @@ optional = true
 [dependencies.httparse]
 version = "~1.3.4"
 
-[dependencies.trust-dns-resolver]
+[dependencies.smallvec]
 version = "*"
 
+[dependencies.serde]
+version = "1.0"
+
+
+[dependencies.bincode]
+version = "1.2.1"
 
 [dependencies.futures]
-version = "*"
+version = "0.3.4"
 
 # Core async engine
 [dependencies.tokio]

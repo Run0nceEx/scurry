@@ -1,6 +1,21 @@
 use std::time::Duration;
-
 use async_trait::async_trait;
+use serde::{Serialize, Deserialize};
+
+pub enum Error {}
+
+
+/// Save Self into a "loadable"/serialized form 
+pub trait ScheduleLedger<'a, T: Serialize + Deserialize<'a>> {
+    fn save(&self) -> Result<(), Error>;
+    fn load(loader: T) -> Self;
+}
+
+
+#[async_trait]
+pub trait PostProcessor<T> {
+    async fn process(&self, unit: T) -> Option<T>;
+}
 
 /// Command run on (CRON)
 #[async_trait]
