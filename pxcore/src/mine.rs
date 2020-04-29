@@ -1,73 +1,60 @@
-
 use async_trait::async_trait;
-use super::scheduler::{Schedule, CRON};
+use scheduler::{Schedule, CRON};
 use std::{
     time::{Duration, Instant},
     net::SocketAddr,
 };
 use smallvec::SmallVec;
 
+#[derive(Clone)]
 enum Error {}
 
-const MAX_RESCHEDULE: usize = 3;
+const MAX_RESCHEDULE: usize = 4;
 
-#[derive(Debug, Clone)]
-enum Action<T> {
+#[derive(Clone)]
+enum Action {
     NoopConnection,
-    ProtocolScan(/* */),
-    ReschdeludeOnFail(T, Duration, SmallVec<[Response<T>; MAX_RESCHEDULE]>)
+    ProtocolScan,
+    ReschdeludeOnFail(Box<Action>, Duration,)
 }
 
-#[derive(Debug, Clone)]
-struct Response<T> {
+#[derive(Clone)]
+struct Response {
     ttl: Duration,
     ts_started: Instant,
     ts_stopped: Option<Instant>,
     addr: SocketAddr,
-    action: Action<T>,
-    result: T
+    result: Result<bool, Error>
 }
 
-impl<'a> Response<Result<(), Error>> {
-    fn new(ttl: Duration, addr: SocketAddr, action: Action<Result<(), Error>>) -> Self
+impl Response {
+    fn new(ttl: Duration, addr: SocketAddr) -> Self
     {
         Self {
             ttl,
             ts_started: Instant::now(),
             ts_stopped: None,
             addr,
-            action,
-            result: Ok(())
+            result: Ok(false)
         }
     }
 }
 
 
-struct Miner<'a>(Schedule<SocketAddr, Response<'a, Result<(), Error>>>);
+struct Miner(Schedule<SocketAddr, Response>);
 
 struct Mine {
     addr: SocketAddr,
-    action: Action::ReschdeludeOnFail(Action::ProtocolScan(), Duration::from_secs(1.0, 0u32))
+    action: Action,
 }
 
 #[async_trait]
-impl<'a, T> CRON<Response<Result<(), Error>>> for Mine {
-    async fn exec(self) -> Response<Result<(), Error>> {
+impl CRON<Response> for Mine {
+    async fn exec(self) -> Response {
         let mut resp = Response::new(
             self.ttl(),
-            self.addr,
-            self.action.clone()
+            self.addr
         );
-        
-        match self.action {
-            Action::NoopConnection => {
-
-            }
-
-            Action::ProtocolScan( ) => {
-
-            }
-        } 
 
         unimplemented!()
     }
