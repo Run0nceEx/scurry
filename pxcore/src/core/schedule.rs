@@ -14,7 +14,7 @@ use std::{
     task::{Context, Poll}
 };
 
-use core::future::Future;
+use std::future::Future;
 use serde::{Serialize, Deserialize};
 
 use smallvec::{SmallVec};
@@ -30,24 +30,6 @@ const STACK_ALLOC_MAX: usize = 128;
 ///                             ^ or drop
 /// -------------------------------------
 /// ```
-pub async fn post_process<R>(rx: &mut mpsc::Receiver<R>, post_hooks: &[R]) -> Option<R> 
-where 
-    R: PostProcessor<R> + Copy
-{
-    if let Some(mut item) = rx.recv().await {
-        for hook in post_hooks {
-            match hook.process(item).await {
-                Some(new_item) => {
-                    item = new_item;
-                }
-                None => return None
-            }
-        }
-        return Some(item)
-    }
-    None
-}
-
 pub struct Handles<J>(Vec<JoinHandle<Option<J>>>);
 
 enum HandlesState<J> {
@@ -69,7 +51,7 @@ impl<J> Handles<J> {
     }
 
     /// Like `join` except non-blocking
-    /// Seek for Resolved threads - remove resolved, keep unresolved until next pass
+    /// Seeks for Resolved threads - remove resolved, keep unresolved until next pass
     async fn partial_join(&mut self) -> SmallVec<[J; STACK_ALLOC_MAX]> {
 
         let mut i: usize = 0;
@@ -131,8 +113,6 @@ pub struct Schedule<Job>
     handles: Handles<Job>
 }
 
-
-
 pub enum ScheduleConstructor {
     Inherit(mpsc::Sender<Mined>),
     New
@@ -160,8 +140,8 @@ impl<T> Schedule<T> {
 
 struct ErrorKind {
     addr: SocketAddr,
-    error: Box<std::error::Error>,
-    proto: Box<Scannable>
+    error: Box<dyn std::error::Error>,
+    proto: Box<dyn Scannable>
 }
 
 
@@ -183,9 +163,9 @@ impl<T> Schedule<T>
 where
     T: CRON<CronReturnInternal> + Sync + Send + 'static + Clone + PartialEq,
 {   
-    /// Run tasks
-    /// returns kill indexes
-    fn run(&mut self) {
+    /// Run tasks and collect
+    pub async fn run(&mut self) {
+        self.join().await;
         let commands = self.commands.clone();
 
         for command in commands {
@@ -193,55 +173,41 @@ where
                 let mut vtx = self.val_tx.clone();
                 if let Some(mut job) = self.commands.remove_item(&command) {
 
-                    tokio::spawn(async move { 
-                        // the only reason we can do this is bc async runtime is smol
-                        // i tink :kek:
-
-                        let og_schedule_max = job.max_reschedule();
-                        let mut reschedule_cnt: usize = 0;
-                        //let mut responses: Vec<Mined> = Vec::with_capacity(og_schedule_max+1);
-
-                        while og_schedule_max > reschedule_cnt {
-                            match timeout(job.ttl(), job.exec()).await {
-                                Ok(val) => {
-                                    let resp = match val {
-                                        CronReturnInternal::Success(suc, attempts) => Some(CronReturnSender::Success(suc, attempts)),
-                                        CronReturnInternal::Failure(attemps) => Some(CronReturnSender::Failure(attemps)),
-                                        CronReturnInternal::Reschedule => None
-                                    };
-
-                                    if let Some(r) = resp {
-                                        if let Err(e) = vtx.send(r).await {
-                                            eprintln!("Failed to send back in Job: {}", e)
+                    let handle = tokio::spawn(async move { 
+                        match timeout(job.ttl(), job.exec()).await {
+                            Ok(val) => {
+                                let resp = match val {
+                                    CronReturnInternal::Success(success, attempts) => CronReturnSender::Success(success, attempts),
+                                    CronReturnInternal::Failure(attemps) => CronReturnSender::Failure(attemps),
+                                    CronReturnInternal::Reschedule => {
+                                        if job.reschedule() {
+                                            return Some(job)
                                         }
+                                        return None
                                     }
-
-                                    // else {
-                                    //     tokio::timer::sleep();
-                                    // }
-                                    
-                                }
-                                Err(e) => {
-                                    eprintln!("{}", e);
-                                    reschedule_cnt += 1;
-                                    if job.reschedule() == false {
-                                        break
-                                    }
+                                };
+                                
+                                if let Err(e) = vtx.send(resp).await {
+                                    eprintln!("Failed to send back in Job: {}", e)
                                 }
                             }
+
+                            Err(e) => eprintln!("{}", e)
                         }
+                        return None
                     });
 
+                    self.handles.push(handle);
                 }
             }
-
         }
     }
+
+    #[inline]
+    async fn join(&mut self) {
+        self.commands.extend(self.handles.partial_join().await);
+    }
 }
-
-
-impl<'a, T: Serialize + Deserialize<'a>> DiskRepr for Schedule<T>
-where T: IntoDiskRepr<T> + FromDiskRepr<'a, T> {}
 
 
 #[derive(Copy, Clone)]
@@ -345,6 +311,10 @@ impl CRON<Mined> for MinerJob {
 //   }
 // }
 
+
+impl<'a, T: Serialize + Deserialize<'a>> DiskRepr for Schedule<T>
+where T: IntoDiskRepr<T> + FromDiskRepr<'a, T> {}
+
 // #[derive(Serialize, Deserialize)]
 // pub struct JobsSerialized<T>(Vec<T>);
 // impl<T> DiskRepr for JobsSerialized<T> {}
@@ -367,3 +337,21 @@ impl CRON<Mined> for MinerJob {
 //         Ok(())
 //     }
 // }
+
+pub async fn post_process<R>(rx: &mut mpsc::Receiver<R>, post_hooks: &[R]) -> Option<R> 
+where 
+    R: PostProcessor<R> + Copy
+{
+    if let Some(mut item) = rx.recv().await {
+        for hook in post_hooks {
+            match hook.process(item).await {
+                Some(new_item) => {
+                    item = new_item;
+                }
+                None => return None
+            }
+        }
+        return Some(item)
+    }
+    None
+}
