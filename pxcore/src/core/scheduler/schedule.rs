@@ -6,24 +6,28 @@ pub trait PostProcessor<T> {
     async fn process(&self, unit: T) -> Option<T>;
 }
 
-/// Command run on (CRON)
+/// Used in scheduler (Command run on)
 #[async_trait]
 pub trait CRON<R>: Sized {
     /// Run function, and then append to parent if more jobs are needed
-    async fn exec(self) -> R;
+    async fn exec(&mut self) -> R;
 
     /// check if command should be ran
     fn check(&self) -> bool;
+
+    /// check if reschedule is needed
+    fn reschedule(&mut self) -> bool {
+        false
+    }
+
+    fn max_reschedule(&self) -> usize {
+        32
+    }
 
     /// time to live - default time is 1 minute
     fn ttl(&self) -> Duration {
         Duration::from_secs(60)
     }
-}
 
-/// Used to specify thread scheduler
-pub trait ScheduleExecutor {
-    fn run(&mut self);
 }
-
 

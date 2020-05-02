@@ -1,11 +1,11 @@
 mod proto;
 
 use std::net::SocketAddr;
-pub use proto::Scannable;
+pub use proto::{Scannable};
 
+pub enum Error {}
 
-pub async fn is_protocol<T, S, E>(x: T, addr: SocketAddr) -> Result<(bool, T), E>
-where T: Scannable<S, E> {
-    let mut y = x.connect(addr).await?;
-    Ok((x.scan(&mut y).await?, x))
-} 
+pub async fn is_protocol<T, S, E>(mut x: T, addr: SocketAddr) -> Result<(bool, T), Error>
+where T: Scannable  {
+    Ok((x.scan().await, x))
+}
