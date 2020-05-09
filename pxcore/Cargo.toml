@@ -14,6 +14,7 @@ logging = ["tracing"]
 
 [dependencies.uuid]
 version = "0.8.1"
+features = ["v4"]
 
 [dependencies.async-trait]
 version = "~0.1.30"

@@ -1,26 +1,26 @@
 use crate::utils::{DiskRepr, IntoDiskRepr, FromDiskRepr, Mode};
 use super::{CRON, PostProcessor, Scannable};
-
-use tokio::{
-    sync::{mpsc},
-    time::timeout,
-    task::JoinHandle,
-};
-
-use std::{
-    time::{Duration, Instant},
-    net::SocketAddr,
-    pin::Pin,
-    task::{Context, Poll}
-};
-
 use std::future::Future;
 use serde::{Serialize, Deserialize};
 
-use smallvec::{SmallVec};
+use tokio::{
+    sync::mpsc,
+    time::{timeout, Instant, Duration, DelayQueue, Error as TimeError},
+    task::JoinHandle,
+    stream::StreamExt
+};
+
+use std::{
+    net::SocketAddr,
+    pin::Pin,
+    task::{Context, Poll},
+    collections::HashMap,
+};
+
+use smallvec::SmallVec;
 
 const STACK_ALLOC_MAX: usize = 128;
-
+const RESCHEDULES_ALLOW_MAX: usize = 128;
 
 /// Runs Post Processors against `receiver<R>`, Executed in order of the `post_hooks` (0..)
 /// ```txt
@@ -53,7 +53,6 @@ impl<J> Handles<J> {
     /// Like `join` except non-blocking
     /// Seeks for Resolved threads - remove resolved, keep unresolved until next pass
     async fn partial_join(&mut self) -> SmallVec<[J; STACK_ALLOC_MAX]> {
-
         let mut i: usize = 0;
         let mut indexes: SmallVec<[usize; STACK_ALLOC_MAX]> = SmallVec::new();
         
@@ -81,7 +80,6 @@ impl<J> Handles<J> {
                     indexes.push(i)
                 }
             };
-
             i += 1;
         }
 
@@ -92,7 +90,6 @@ impl<J> Handles<J> {
 
 fn remove_indexes<T>(src: &mut Vec<T>, indexes: &[usize]) {
     let mut balancer: usize = 0;
-    
     for rm_i in indexes {
         let i = rm_i - balancer;
         balancer += 1;
@@ -102,60 +99,104 @@ fn remove_indexes<T>(src: &mut Vec<T>, indexes: &[usize]) {
 
 
 pub enum CronReturnSender {
-    Success(Mined, Vec<Mined>),
-    Failure(Vec<Mined>)
+    Success(Mined),
+    Failure(Error)
 }
 
-pub struct Schedule<Job>
-{
-    val_tx: mpsc::Sender<CronReturnSender>,
-    commands: Vec<Job>,
-    handles: Handles<Job>
+#[derive(Clone, Copy)]
+pub struct CronMeta {
+    ts: Instant,
+    id: uuid::Uuid,
+    tts: Duration, // time to sleep
+    ttl: Duration // timeout duration/time to live
+    // exec_duration: Option<Duration>,
 }
 
-pub enum ScheduleConstructor {
-    Inherit(mpsc::Sender<Mined>),
-    New
-}
+impl CronMeta {
+    fn new() -> Self {
 
-impl<T> Schedule<T> {
-    fn append(&mut self, jobs: &[T]) where T: Clone {
-        if jobs.len() > 0 {
-            self.commands.extend(jobs.iter().map(|x| x.clone()))
+        Self {
+            ts: Instant::now(),
+            id: uuid::Uuid::new_v4(),
+            tts: Duration::from_secs(2),
+            ttl: Duration::from_secs(2)
+            //exec_duration: None
         }
     }
+}
 
-    fn new(opts: ScheduleConstructor) -> (Self, mpsc::Receiver<CronReturnSender>) {
+pub struct Schedule<Job> {
+    val_tx: mpsc::Sender<CronReturnSender>,
+    pending: HashMap<uuid::Uuid, (CronMeta, Job)>, // collection of pending jobs
+    timer: DelayQueue<uuid::Uuid>,                 // timer for jobs
+    handles: Handles<(CronMeta, Job)>,             // pending future handles
+}
+
+
+impl<T> Schedule<T> {
+    pub fn insert(&mut self, job: T, meta: CronMeta) where T: Clone {
+        // ignoring key bc we dont transverse `self.pending` to remove items from
+        // `self.timer`
+        let _key = self.timer.insert(meta.id, meta.tts);
+        self.pending.insert(meta.id, (CronMeta::new(), job));
+    
+    }
+
+    pub fn new() -> (Self, mpsc::Receiver<CronReturnSender>) {
         let (vtx, vrx) = mpsc::channel(1024);
         
         let schedule = Self {
             val_tx: vtx,
-            commands: Vec::with_capacity(1024),
-            handles: Handles::new()
+            pending: HashMap::new(),
+            timer: DelayQueue::new(),
+            handles: Handles::new(),
+
         };
 
         (schedule, vrx)
     }
+
+    /// Release jobs that ready to be fired
+    async fn fire(&mut self) -> Result<SmallVec<[(CronMeta, T); 1024]>, TimeError> {
+        let mut jobs: SmallVec<[(CronMeta, T); 1024]> = SmallVec::new();
+
+        while let Some(res) = self.timer.next().await {
+            let entry = res?;
+
+            if let Some((meta, job)) = self.pending.remove(entry.get_ref()) {
+                jobs.push((meta, job));
+            }
+        }
+
+        Ok(jobs)
+    }
+
+    #[inline]
+    async fn join(&mut self) where T: Clone {
+        for (meta, job) in self.handles.partial_join().await {
+            self.insert(job, meta)
+        }
+    }
 }
 
-struct ErrorKind {
-    addr: SocketAddr,
-    error: Box<dyn std::error::Error>,
-    proto: Box<dyn Scannable>
+
+#[derive(Copy, Clone, Debug)]
+pub enum Error {
+    Something
+}
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        unimplemented!()
+    }
 }
 
 
-// impl std::fmt::Display for ErrorKind {
-//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-//         write!(f, "[{}] {:?}", self.addr, self.error)
-//     }
-// } 
-// impl std::error::Error for ErrorKind {}
-
+impl std::error::Error for Error {}
 
 pub enum CronReturnInternal {
-    Success(Mined, Vec<Mined>),
-    Failure(Vec<Mined>),
+    Success(Mined),
+    Failure(Error),
     Reschedule
 }
 
@@ -163,72 +204,66 @@ impl<T> Schedule<T>
 where
     T: CRON<CronReturnInternal> + Sync + Send + 'static + Clone + PartialEq,
 {   
+    
     /// Run tasks and collect
     pub async fn run(&mut self) {
         self.join().await;
-        let commands = self.commands.clone();
+        let jobs = self.fire().await.expect("iye matey, we're out of rum.");
 
-        for command in commands {
-            if command.check() {       
-                let mut vtx = self.val_tx.clone();
-                if let Some(mut job) = self.commands.remove_item(&command) {
+        for (meta, mut job) in jobs {
+            let mut vtx = self.val_tx.clone();
 
-                    let handle = tokio::spawn(async move { 
-                        match timeout(job.ttl(), job.exec()).await {
-                            Ok(val) => {
-                                let resp = match val {
-                                    CronReturnInternal::Success(success, attempts) => CronReturnSender::Success(success, attempts),
-                                    CronReturnInternal::Failure(attemps) => CronReturnSender::Failure(attemps),
-                                    CronReturnInternal::Reschedule => {
-                                        if job.reschedule() {
-                                            return Some(job)
-                                        }
-                                        return None
-                                    }
-                                };
-                                
-                                if let Err(e) = vtx.send(resp).await {
-                                    eprintln!("Failed to send back in Job: {}", e)
-                                }
-                            }
-
-                            Err(e) => eprintln!("{}", e)
+            let handle = tokio::spawn(async move { 
+                match timeout(job.ttl(), job.exec()).await {
+                    Ok(val) => {
+                        let resp = match val {
+                            CronReturnInternal::Reschedule => return Some((meta, job)),
+                            CronReturnInternal::Success(success) => CronReturnSender::Success(success),
+                            CronReturnInternal::Failure(e) => CronReturnSender::Failure(e)
+                        };
+                        
+                        if let Err(e) = vtx.send(resp).await {
+                            eprintln!("Failed to send back in Job: {}", e)
                         }
-                        return None
-                    });
+                    }
 
-                    self.handles.push(handle);
+                    Err(e) => eprintln!("{}", e)
                 }
-            }
-        }
-    }
 
-    #[inline]
-    async fn join(&mut self) {
-        self.commands.extend(self.handles.partial_join().await);
+                return None
+            });
+            
+            self.handles.push(handle);       
+        }
     }
 }
 
+#[derive(Clone, Copy)]
+pub struct MinedMeta {
+    ts: Instant,
+    duration: Option<Duration>,
+}
 
-#[derive(Copy, Clone)]
-enum Error {}
-
+impl MinedMeta {
+    fn new() -> Self {
+        Self {
+            ts: Instant::now(),
+            duration: None
+        }
+    }
+}
 
 #[derive(Clone, Copy)]
 pub struct Mined {
-    ttl: Duration,
-    ts_started: Instant,
-    ts_stopped: Option<Duration>,
+    meta: MinedMeta,
     addr: SocketAddr,
 }
 
 impl Mined {
     fn new(addr: SocketAddr, ttl: Duration) -> Self {
         Self {
-            ttl,
             addr,
-            ts_started: Instant::now(),
-            ts_stopped: None,
+            meta: MinedMeta::new()
         }
     }
 }
@@ -242,29 +277,35 @@ enum Action {
 
 struct MinerJob {
     addr: SocketAddr,
-    protocol: Box<dyn Scannable>,
-
+    protocol: Vec<Box<dyn Scannable>>,
+    index: usize,
+    fire_ts: Instant
 
 }
 
 #[async_trait::async_trait]
-impl CRON<Mined> for MinerJob {
-    async fn exec(&mut self) -> Mined {
+impl CRON<CronReturnInternal> for MinerJob {
+    async fn exec(&mut self) -> CronReturnInternal {
         let mut resp = Mined::new(self.addr, self.ttl());
-        self.protocol.scan().await;
-        resp.ts_stopped = Some(resp.ts_started.elapsed());
 
-        resp
-    }
+        if let Some(scanner) = self.protocol.get(self.index) {
+            let res = scanner.scan().await;
+            resp.meta.duration = Some(resp.meta.ts.elapsed());
+            
+            if res {
+                return CronReturnInternal::Success(resp);
+            }
 
-    fn check(&self) -> bool {
-        true
+            else {
+                self.index += 1;
+                //self.fire_ts = Duration::from_secs(360);
+                return CronReturnInternal::Reschedule
+            }
+        }
+
+        CronReturnInternal::Failure(Error::Something)
     }
 }
-
-
-
-
 
 
 // struct MinerSchedule<T>
@@ -275,9 +316,6 @@ impl CRON<Mined> for MinerJob {
 //     receiver: mpsc::Receiver<Mined>,
 //     scanners: Vec<Box<dyn Scannable>>,
 // }
-
-
-
 
 // // enum MineScheulde {
 // //     Http(MinerSchedule<HttpHandler, Mined>),
@@ -315,6 +353,7 @@ impl CRON<Mined> for MinerJob {
 impl<'a, T: Serialize + Deserialize<'a>> DiskRepr for Schedule<T>
 where T: IntoDiskRepr<T> + FromDiskRepr<'a, T> {}
 
+
 // #[derive(Serialize, Deserialize)]
 // pub struct JobsSerialized<T>(Vec<T>);
 // impl<T> DiskRepr for JobsSerialized<T> {}
@@ -323,14 +362,14 @@ where T: IntoDiskRepr<T> + FromDiskRepr<'a, T> {}
 // impl<'a, T, R> IntoDiskRepr<JobsSerialized<T>> for Schedule<T, R>
 // where T: Serialize + Deserialize<'a> {
 //     fn into_raw_repr(self) -> JobsSerialized<T> {
-//         JobsSerialized(self.commands.into_iter().map(|x| x.clone()).collect())
+//         JobsSerialized(self.jobs.into_iter().map(|x| x.clone()).collect())
 //     }
 // }
 
 // /// Partially Deserialization raw bytes into original
 // impl<'a, T, R> FromDiskRepr<'a, JobsSerialized<T>> for Schedule<T, R> where T: Deserialize<'a> {
 //     fn from_raw_repr(&mut self, buf: &'a [u8], input: Mode) -> Result<(), Box<std::error::Error>> {
-//         self.commands = bincode::deserialize::<JobsSerialized<T>>(buf)?.0
+//         self.jobs = bincode::deserialize::<JobsSerialized<T>>(buf)?.0
 //             .into_iter()
 //             .map(|x| Arc::new(x))
 //             .collect();

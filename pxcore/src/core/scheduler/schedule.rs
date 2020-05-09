@@ -12,22 +12,18 @@ pub trait CRON<R>: Sized {
     /// Run function, and then append to parent if more jobs are needed
     async fn exec(&mut self) -> R;
 
-    /// check if command should be ran
-    fn check(&self) -> bool;
-
-    /// check if reschedule is needed
-    fn reschedule(&mut self) -> bool {
-        false
-    }
-
     fn max_reschedule(&self) -> usize {
         32
     }
 
-    /// time to live - default time is 1 minute
+    /// time to live (default: 1 minute) - this is essentially a time mechanism
     fn ttl(&self) -> Duration {
         Duration::from_secs(60)
     }
 
+    /// job sleeping duration - if failure occurs, it will be send to this 
+    fn reschedule_duration(&self) -> Duration {
+        Duration::from_secs(60)
+    }
 }
 

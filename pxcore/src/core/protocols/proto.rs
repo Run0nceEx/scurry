@@ -3,7 +3,7 @@ use std::net::SocketAddr;
 
 #[async_trait::async_trait]
 pub trait Scannable: Send + Sync + std::fmt::Display {
-    async fn scan(&mut self) -> bool;
+    async fn scan(&self) -> bool;
 }
 
 #[derive(Debug)]
@@ -19,5 +19,5 @@ impl std::fmt::Display for SocksScanner {
 
 #[async_trait::async_trait]
 impl Scannable for SocksScanner {
-    async fn scan(&mut self) -> bool {true}
+    async fn scan(&self) -> bool {true}
 }

@@ -32,8 +32,8 @@ pub trait Judge {
     fn setup() -> Result<(), Error> { Ok(()) }
 
     // Run score system
-    fn judge<T, S>(&self) -> S
+    fn judge<T, S>(&self, protocol: T) -> S
     where 
-        // T: Protocol,
-        S: CalcScore;
+        T: Protocol + CalcScore;
 }
+
