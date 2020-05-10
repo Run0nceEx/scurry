@@ -7,5 +7,7 @@ mod protocols;
 mod scheduler;
 mod schedule;
 
+mod miner;
+
 pub use scheduler::*;
 pub use protocols::*;
