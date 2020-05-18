@@ -18,7 +18,9 @@ pub trait Connection: Sized + 'static {
     }
 }
 
-impl<T> Connection for T where T: Connector<Self> + Identifier<Self> + Send + Sync + 'static {}
+impl<T> Connection for T 
+where 
+    T: Connector<Self> + Identifier<Self> + Send + Sync + 'static {}
 
 
 #[async_trait::async_trait]
@@ -44,14 +46,16 @@ pub trait Identifier<C: Connection + 'static>
 }
 
 
-
-
 #[async_trait::async_trait]
 impl Connector<TcpStream> for TcpStream {
     async fn init_connect(addr: SocketAddr) -> Result<TcpStream, ErrorKind> {
         Ok(TcpStream::connect(addr).await?)
     }
 }
+
+
+impl Identifier<TcpStream> for 
+
 
 impl Connection for TcpStream {}
 
