@@ -1,13 +1,10 @@
 #![allow(dead_code)]
 #![allow(non_camel_case_types)]
 
+//mod schedule;
 
-mod protocols;
+mod net;
+mod detector;
 
-mod scheduler;
-mod schedule;
-
-mod miner;
-
-pub use scheduler::*;
-pub use protocols::*;
+//pub use scheduler::*;
+pub use net::*;

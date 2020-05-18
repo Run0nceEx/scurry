@@ -1,5 +1,5 @@
 
-use super::{CRON, Scannable};
+use super::{CRON, Scannable, Connector};
 use super::schedule::CronControls;
 use tokio::{
     time::{Instant, Duration},
@@ -47,34 +47,42 @@ impl Mined {
 }
 
 
-struct MinerJob {
+struct MinerJob<C, P> {
     addr: SocketAddr,
-    protos: SmallVec<[Box<dyn Scannable>; 24]>,
+    connector: C,
+    scanner: P
 }
 
+enum Error {}
+
 #[async_trait::async_trait]
-impl CRON<CronControls<Mined>> for MinerJob {
+impl<C, P> CRON<CronControls<Mined>> for MinerJob<C, P> 
+where 
+    C: Connector + Send,
+    P: Scannable<C> {
+
     async fn exec(&mut self) -> CronControls<Mined> {
         let mut resp = Mined::new(self.addr);
 
-        if let Some(protocol) = self.protos.pop() {
-            let res = protocol.scan().await;
-            resp.meta.duration = Some(resp.meta.ts.elapsed());
-            
-            let ret = match res {
-                Ok(_) => {
-                    resp.protocol = format!("{}", protocol);
-                    CronControls::Success(resp)
-                
-                },
-                Err(e) => {
-                    eprintln!("{:?}", e);
-                    CronControls::Reschedule(Duration::from_secs(3))
-                }
-            };
+        let stream = match C::init_connect(self.addr).await {
+            Ok(stream) => stream,
+            Err(e) => return CronControls::Reschedule(Duration::from_secs(360))
+        };
 
-            return ret
-        }
+        let res = P::scan(stream).await;
+        
+        resp.meta.duration = Some(resp.meta.ts.elapsed());
+        
+        let ret = match res {
+            Ok(_) => {
+                CronControls::Success(resp)
+            
+            },
+            Err(e) => {
+                eprintln!("{:?}", e);
+                CronControls::Reschedule(Duration::from_secs(3))
+            }
+        };
         
         CronControls::Drop
     }
@@ -85,7 +93,6 @@ struct SpeedTest {
     results: [Duration; MEASUREMENTS],
     ctr: usize
 }
-
 
 struct SpeedTestJob {
     addr: SocketAddr,
