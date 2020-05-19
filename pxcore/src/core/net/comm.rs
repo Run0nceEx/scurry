@@ -73,7 +73,7 @@ struct A(TcpStream);
 impl A {
     async fn new(addr: SocketAddr) {
         let stream = TcpStream::connect(addr).await.unwrap();
-        Socks5{}.detect(stream);
+        Socks5{}.detect(stream).await;
     }
 }
 
