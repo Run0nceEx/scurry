@@ -65,13 +65,3 @@ impl Connector for TcpStream {
         Ok(TcpStream::connect(addr).await?)
     }
 }
-
-struct Socks5;
-
-#[async_trait::async_trait]
-impl Identifier<TcpStream> for Socks5 {
-    async fn detect(&self, con: &mut TcpStream) -> Result<bool, Box<dyn Error>> {
-        Ok(true)
-    }
-}
-
