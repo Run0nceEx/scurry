@@ -1,5 +1,5 @@
 use tokio::prelude::*;
-use crate::Identifier;
+use crate::ProtocolIdentifier;
 use tokio::net::TcpStream;
 
 const MAX_HEADER_AMOUNT: usize = 64;
@@ -9,7 +9,7 @@ const GREET: &[u8] = b"HTTP 1.1\n\rGET /\n\r";
 struct HttpReq {}
 
 #[async_trait::async_trait]
-impl Identifier<TcpStream> for HttpReq {
+impl ProtocolIdentifier<TcpStream> for HttpReq {
     async fn detect(&self, stream: &mut TcpStream) -> Result<bool, Box<std::error::Error>> {
 
         stream.write(GREET).await?;

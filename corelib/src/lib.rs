@@ -1,8 +1,9 @@
-pub mod features;
-mod comm;
+
+mod identify;
+mod probe;
 
 
-pub use comm::{Identifier, Connector, Negotiate, TcpStream};
+pub use identify::{ConnectionHandler, Connector, ServerConnector};
 
 
 

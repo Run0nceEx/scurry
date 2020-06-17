@@ -1,6 +1,6 @@
+use corelib::{ProtocolIdentifier, Connector, Negotiate};
 
-use super::{CRON, Scannable, Connector};
-use super::schedule::CronControls;
+use super::schedule::{CronControls, CRON};
 use tokio::{
     time::{Instant, Duration},
     net::TcpStream
@@ -35,8 +35,7 @@ pub struct Mined {
 }
 
 impl Mined {
-    fn new(addr: SocketAddr) -> Self 
-    {
+    fn new(addr: SocketAddr) -> Self {
         Self {
             addr,
             meta: MinedMeta::new(),
@@ -49,37 +48,42 @@ impl Mined {
 
 struct MinerJob<C, P> {
     addr: SocketAddr,
-    connector: C,
-    scanner: P
+    connector: std::marker::PhantomData<C>,
+    scanners: Vec<Box<P>>,
+    index: usize
 }
-
-enum Error {}
 
 #[async_trait::async_trait]
 impl<C, P> CRON<CronControls<Mined>> for MinerJob<C, P> 
 where 
-    C: Connector + Send,
-    P: Scannable<C> {
-
+    C: Connector + Send, // Constant
+    P: ProtocolIdentifier<C> + Send + Sync // Dynamic     
+{
     async fn exec(&mut self) -> CronControls<Mined> {
         let mut resp = Mined::new(self.addr);
 
-        let stream = match C::init_connect(self.addr).await {
+        let mut stream = match C::init_connect(self.addr).await {
             Ok(stream) => stream,
             Err(e) => return CronControls::Reschedule(Duration::from_secs(360))
         };
 
-        let res = P::scan(stream).await;
-        
+        let scanner = &self.scanners[self.index];
+        // Result<T, E> behaves like Result<&T> until unwrapped
+        // so we may need some special result type internally that impls Clone + Send for
+        // schedules - currently undetermined
+        let res = scanner.detect(&mut stream).await.unwrap_or_else(|e| {
+            eprintln!("Error: {}", e);
+            false
+        });
+
         resp.meta.duration = Some(resp.meta.ts.elapsed());
         
         let ret = match res {
-            Ok(_) => {
+            true => {
                 CronControls::Success(resp)
-            
             },
-            Err(e) => {
-                eprintln!("{:?}", e);
+
+            _ => {
                 CronControls::Reschedule(Duration::from_secs(3))
             }
         };
@@ -106,7 +110,7 @@ impl CRON<CronControls<SpeedTest>> for SpeedTestJob {
         if MEASUREMENTS > self.res.ctr {
             
             let now = Instant::now();
-            TcpStream::connect(self.addr).await;
+            let result = TcpStream::connect(self.addr).await;
             let time_taken = now.elapsed();
 
             self.res.results[self.res.ctr] = time_taken;

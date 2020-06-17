@@ -21,7 +21,7 @@ impl CalcScore for Score {
 
 impl CalcScore for Vec<Score> {
     fn score(&self) -> f32 {
-        self.iter().map(|s| s.score()).sum::<f32>() / self.len() as f32
+        (self.iter().map(|s| s.score()).sum::<f32>() / self.len() as f32).floor()
     }
 }
 

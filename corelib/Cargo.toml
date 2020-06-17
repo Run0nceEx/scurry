@@ -18,6 +18,9 @@ version = "0.1"
 version = "0.2"
 features = ["parking_lot", "time", "net", "io-util", "sync", "rt-util"]
 
+[dependencies.smallvec]
+version = "*"
+
 [dependencies.httparse]
 version = "*"
 optional = true

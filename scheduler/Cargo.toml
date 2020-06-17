@@ -9,10 +9,29 @@ edition = "2018"
 [dependencies.async-trait]
 version = "0.1"
 
+[dependencies.futures]
+version = "0.3"
+
+[dependencies.uuid]
+version = "0.8"
+features = ["v4"]
+
+[dependencies.trace]
+version = "0.1"
+
+[dependencies.smallvec]
+version = "1.4"
+
 [dependencies.tokio]
 version = "0.2"
-features = ["parking_lot", "time", "net", "io-util", "sync", "rt-util"]
+features = ["parking_lot", "time", "net", "io-util", "sync", "rt-util", "stream", "process"]
+
+[dependencies.diesel]
+version = "1.4.4"
+features = ["sqlite", "mysql"]
+
+[dependencies.tokio-diesel]
+version = "0.3"
 
 [dependencies.corelib]
 path = "../corelib"
-
