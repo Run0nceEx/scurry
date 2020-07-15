@@ -2,7 +2,7 @@ mod core;
 pub mod sugar;
 
 pub use crate::schedule::core::*;
-
+pub use crate::schedule::core::CronMeta;
 
 
 /// Used in scheduler (Command run on)

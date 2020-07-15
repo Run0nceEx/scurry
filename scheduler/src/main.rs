@@ -25,23 +25,22 @@ use std::io::{Read, BufReader, BufRead};
 #[tokio::main]
 async fn main() -> Result<(), Error> {
 
-
-
-
 	let mut job_pool: ScheduledJobPool<OpenPortJob, PortState, Job> = ScheduledJobPool::new();
 	job_pool.subscribe(PrintSub::new());
 
-	let file = std::fs::OpenOptions::new().read(true).open("/tmp/sample")?;
+	let file = std::fs::OpenOptions::new().read(true).open("/tmp/list")?;
 	let mut reader = BufReader::new(file);
 	let mut buf = String::new();
+	let mut i = 0;
 
 	while let Ok(n) = reader.read_line(&mut buf) {
+		i += 5;
 		if n > 0 {
 			match buf.trim().parse() {
 				Ok(addr) =>  {
 					job_pool.insert(
 						Job::new(addr, 1),
-						std::time::Duration::from_secs(10),
+						std::time::Duration::from_secs(2),
 						std::time::Duration::from_millis(1),
 						2
 					);
@@ -60,7 +59,7 @@ async fn main() -> Result<(), Error> {
 		job_pool.process_jobs().await?;
 		job_pool.process_events().await;
 		//std::thread::sleep(std::time::Duration::from_secs(5));
-		println!("{:?}", job_pool.handles());
+		//println!("{:?}", job_pool.handles());
 	}
 			
 

@@ -22,7 +22,7 @@ use smallvec::SmallVec;
 
 const CHUNK_SIZE: usize = 256;
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub enum ScheduleControls<R> {
     /// Operations went according to plan, 
     /// and requesting to be reschedule again
@@ -40,7 +40,7 @@ pub enum ScheduleControls<R> {
     Fuck,
 } 
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct CronMeta {
     pub id: uuid::Uuid,
     pub created: Instant,
@@ -64,59 +64,6 @@ impl CronMeta {
     }
 }
 
-#[derive(Debug)]
-enum HandlesState<J> {
-    Push(J),
-    Pop,
-    Drop,
-    Pending,
-    Error(Box<dyn std::error::Error>)
-}
-
-#[derive(Debug)]
-pub struct Handle<R> {
-    pub uuid: uuid::Uuid,
-    pub inner: JoinHandle<R>,
-}
-
-/// partially "join" threads to get completed results in manager,
-/// 
-async fn partial_join<R, S>(handles: &mut Vec<Handle<(ScheduleControls<R>, CronMeta, S)>>, reschedules: &mut Vec<(ScheduleControls<R>, CronMeta, S)>) {
-    let mut keys: Vec<usize> = Vec::with_capacity(20000);
-    
-    let mut ctr = 0;
-    
-    for handle in handles.iter_mut() {
-        let resp = poll_fn(|cx: &mut Context| {
-            match Pin::new(&mut handle.inner).poll(cx) {
-                Poll::Pending => Poll::Ready(HandlesState::Pending),
-                Poll::Ready(Ok(resp)) => Poll::Ready(HandlesState::Push(resp)),
-                Poll::Ready(Err(e)) => Poll::Ready(HandlesState::Error(Box::new(e)))
-            }
-        }).await;
-        
-        match resp {
-            HandlesState::Push(result) => {
-                reschedules.push(result);
-                keys.push(ctr);
-            }
-            
-            HandlesState::Error(e) => eprintln!("FUCK {}", e),
-            _ => {}
-        }
-        
-        
-        ctr += 1;
-    }
-
-    for (i, x) in keys.iter().enumerate() {
-        println!("removing handle {}",x - i);
-        println!("x: {}, i: {}",x , i);
-        //remove and balance index for completed handles
-        handles.remove(x - i);
-    }
-}
-
 /// Release jobs that ready to be fired
 /// expected to be
 async fn release_due<S>(
@@ -134,125 +81,29 @@ async fn release_due<S>(
     Ok(())
 }
 
-pub struct ThreadController<J, R, S>
-where 
-    J: CRON<Response=ScheduleControls<R>, State=S>,
-    R: Send + Clone + Sync + 'static
-{
-    
-    _job: std::marker::PhantomData<J>,
-    handles: Vec<Handle<(ScheduleControls<R>, CronMeta, S)>>,
-    tx: mpsc::Sender<R>,
-}
-
-impl<J, R, S> ThreadController<J, R, S> 
+fn spawn_worker<J, R, S>(mut vtx: mpsc::Sender<(ScheduleControls<R>, CronMeta, S)>, meta: CronMeta, state: S)
 where 
     J: CRON<Response=ScheduleControls<R>, State=S>,
     R: Send + Clone + Sync + 'static,
     S: Send + Sync + Clone + 'static
 {
-    #[inline]
-    pub fn new() -> (Self, mpsc::Receiver<R>) {
-        let (vtx, vrx) = mpsc::channel(1024);
-        
-        let tctrl = ThreadController {
-            _job: std::marker::PhantomData::<J>,
-            tx: vtx,
-            handles: Vec::new(),
+    tokio::spawn(async move {
+        tracing::event!(target: "Schedule Thread", Level::INFO, "Firing job {}", meta.id);
+        let prev_state = state.clone();
 
-        };
-
-        (tctrl, vrx)
-    }
-
-    pub fn fire(&mut self, meta: CronMeta, state: S) {
-        let mut vtx = self.tx.clone();
-
-        let handle = tokio::spawn(async move {
-            tracing::event!(target: "Schedule Thread", Level::INFO, "Firing job {}", meta.id);
-            let prev_state = state.clone();
-
-            let (state, ctrl) = match timeout(meta.ttl, J::exec(state)).await {
-                Ok((ctrl, state)) => (state, ctrl),
-                
-                Err(e) => {
-                    //eprintln!("Error: {}", e);
-                    return (ScheduleControls::Retry, meta, prev_state);
-                }
-            };
+        let (state, ctrl) = match timeout(meta.ttl, J::exec(state)).await {
+            Ok((ctrl, state)) => (state, ctrl),
             
-            tracing::event!(target: "Schedule Thread", Level::INFO, "Completed job {}", meta.id);
-            
-            match ctrl {
-                ScheduleControls::Success(resp) => {
-                    let resp: R = resp;
-                    if let Err(e) = vtx.send(resp.clone()).await {
-                        eprintln!("{}", e)
-                    }
-                    return (ScheduleControls::Success(resp), meta, state)
-                }
-                _ => return (ctrl, meta, state)    
+            Err(e) => {
+                (prev_state, ScheduleControls::Retry)
             }
-        });
-
-        let hldr = Handle {
-            inner: handle,
-            uuid: meta.id
         };
-
-        self.handles.push(hldr);
-    }
-
-    /// partially collect returned values from thread,
-    /// like `tokio::task::JoinHandle.join` but non-blocking
-    async fn join(&mut self, buf: &mut Vec<(CronMeta, S)>)
-    {   
-        let mut tmp: Vec<(ScheduleControls<R>, CronMeta, S)> = Vec::new();
-
-        partial_join(&mut self.handles, &mut tmp).await;
         
-        for (ctrl, mut meta, state) in tmp {
-            let mut vtx = self.tx.clone();
-            
-            match ctrl {
-                ScheduleControls::Reschedule(_) | ScheduleControls::Retry => {     
-                    println!("reschedule");
-                    if let ScheduleControls::Reschedule(tts) = ctrl {
-                        meta.tts = tts;
-                    }
-
-
-                    if meta.ctr <= meta.max_ctr {
-                        meta.ctr += 1;
-                        buf.push((meta, state))
-                    }
-                }
-                ScheduleControls::Drop(r) => {
-                    
-                    println!("dropping whatever ")
-                },
-                ScheduleControls::Fuck => {
-                    println!("we errors")
-                },
-                ScheduleControls::Success(r) => {
-                    if let Err(e) = vtx.send(r.clone()).await {
-                        eprintln!("{}", e)
-                    }
-                }
-            }
-
-            // let mut ctr = 0;
-            // for x in &self.handles {
-            //     ctr += 1;
-            //     if x.uuid == meta.id {
-            //         break
-            //     }
-            // }
-            
-            // self.handles.remove(ctr);
-        }
-    }
+        tracing::event!(target: "Schedule Thread", Level::INFO, "Completed job {}", meta.id);
+        vtx.send((ctrl, meta, state)).await;
+    });
 }
+
 
 
 pub struct Schedule<J, R, S>
@@ -262,9 +113,10 @@ where
     S: Send + Clone + Sync
 {
     timer: DelayQueue<uuid::Uuid>,                 // timer for jobs
-    threads: ThreadController<J, R, S>,
+    tx: mpsc::Sender<(ScheduleControls<R>, CronMeta, S)>,
     bank: HashMap<uuid::Uuid, (CronMeta, S)>,      // collection of pending jobs
-    job_buf: Vec<(CronMeta, S)>
+    job_buf: Vec<(CronMeta, S)>,
+    _job: std::marker::PhantomData<J>
 }
 
 
@@ -279,21 +131,21 @@ where
         // `self.timer`
         let _key = self.timer.insert(meta.id, meta.tts);
         self.bank.insert(meta.id, (meta, state));
-    
     }
     
     #[inline]
-    pub fn new() -> (Self, mpsc::Receiver<R>) {
-        let (tctrl, vrx) = ThreadController::new();
+    pub fn new() -> (Self, mpsc::Receiver<(ScheduleControls<R>, CronMeta, S)>) {
+        let (tx, rx) = mpsc::channel(100000);
         
         let schedule = Self {
-            threads: tctrl,
+            tx: tx,
             bank: HashMap::new(),
             timer: DelayQueue::new(),
             job_buf: Vec::with_capacity(2048),
+            _job: std::marker::PhantomData
         };
 
-        (schedule, vrx)
+        (schedule, rx)
     }
 
     /// Run tasks and collect
@@ -302,18 +154,11 @@ where
         R: Send + 'static + Clone + Sync
     {   
         release_due(&mut self.timer, &mut self.bank, &mut self.job_buf).await?;
-        self.threads.join(&mut self.job_buf).await;
         
         for (meta, state) in self.job_buf.drain(..) {
-            self.threads.fire(meta, state);
+            spawn_worker::<J, R, S>(self.tx.clone(), meta, state);
         }
 
         Ok(())
-    }
-
-    /// Run tasks and collect
-    pub fn handles(&self) -> usize 
-    {   
-        self.threads.handles.len()
     }
 }

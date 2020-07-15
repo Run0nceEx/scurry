@@ -65,15 +65,15 @@ where
 	S: Send + Clone + Sync,
 {
 	schedule: Schedule<J, R, S>,
-	listener: Listener<R>,
+	listener: Listener<(ScheduleControls<R>, CronMeta, S)>,
 }
 
 
 impl<J, R, S> ScheduledJobPool<J, R, S>
 where
 	J: CRON<Response = ScheduleControls<R>, State = S>,
-	R: Send + Clone + Sync + 'static,
-	S: Send + Clone + Sync + 'static
+	R: Send + Clone + Sync + 'static + std::fmt::Debug,
+	S: Send + Clone + Sync + 'static + std::fmt::Debug
 {
 	pub fn new() -> Self {
 		let (schedule, rx) = Schedule::new();
@@ -85,7 +85,7 @@ where
 
 	pub fn subscribe<T>(&mut self, sub: T)
 	where 
-		T: Subscriber<R> + 'static
+		T: Subscriber<(ScheduleControls<R>, CronMeta, S)> + 'static
 	{   
         //println!("adding sub");
 		self.listener.add_sub(sub);
@@ -109,9 +109,5 @@ where
         //println!("running jobs");
         self.schedule.spawn_ready().await?;
         Ok(())
-    }
-
-    pub fn handles(&self) -> usize {
-        self.schedule.handles()
     }
 }
