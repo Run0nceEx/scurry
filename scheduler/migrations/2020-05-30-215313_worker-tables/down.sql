@@ -1,12 +1,16 @@
 -- This file should undo anything in `up.sql`
 use pxdb;
 
-drop table ip_index;
-drop table protocols;
-drop table providers;
-drop table service_index;
-drop table service_data;
-drop table score_data;
+drop table Providers;
+drop table ProtocolID;
+drop table ProtocolProbe;
+
+drop table ServiceIndex;
 drop index services;
 
---drop view services;
+drop table ServiceData;
+
+drop table ScoreData;
+drop table PortFrequencyGraph;
+drop table Latency;
+drop table SpeedTest;

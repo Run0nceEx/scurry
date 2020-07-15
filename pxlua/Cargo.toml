@@ -21,7 +21,7 @@ version = "*"
 
 [dependencies.tokio]
 version = "0.2"
-features = ["parking_lot", "time", "net", "io-util", "sync", "rt-util"]
+features = ["parking_lot", "time", "net", "io-util", "sync", "rt-util", "udp"]
 
 [dependencies.corelib]
 path = "../corelib"

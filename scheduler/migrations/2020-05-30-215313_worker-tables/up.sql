@@ -1,82 +1,135 @@
--- Your SQL goes here
--- https://sqlite.org/foreignkeys.html
-
 use pxdb;
 
-CREATE TABLE ip_index(
-    ip int not null,
-    PRIMARY KEY(IP), 
-    UNIQUE(ip)
+create table Providers(
+    provider_name TINYTEXT not null,
+    PRIMARY KEY(provider_name),
+
+    UNIQUE(provider_name)
 );
 
-create table protocols(
-    identifer varchar(20) not null,
+create table ProtocolID(
+    identifer TINYTEXT not null,
+    rarity SMALLINT not null,
+
     PRIMARY KEY(identifer),
     UNIQUE(identifer)
 );
 
-create table providers(
-    provider_name varchar(20) not null,
-    PRIMARY KEY(provider_name),
-    UNIQUE(provider_name)
+create table ProtocolProbe(
+    identifer TINYTEXT not null,
+
+    regex TEXT not null,
+    cpe_flags TEXT not null,
+    probe_data binary not null,
+
+
+    PRIMARY KEY(identifer),
+    identifer REFERENCES ProtocolID(identifer),
 );
 
-create table service_index(
+
+create table ServiceIndex(
     id int not null AUTO_INCREMENT,
     
     ip int not null,
     port smallint not null,
 
     is_online BOOLEAN DEFAULT FALSE NOT NULL,
-    provider_name varchar(20) not null,
+    provider_name TINYTEXT not null,
     
-    identifer varchar(20),
+    identifer TINYTEXT,
 
     PRIMARY KEY(id),
-    FOREIGN KEY(identifer) REFERENCES protocols(identifer),
+    FOREIGN KEY(identifer) REFERENCES ProtocolID(identifer),
     FOREIGN KEY(provider_name) REFERENCES providers(provider_name),
-    FOREIGN KEY(ip) REFERENCES ip_index(ip),
     UNIQUE(ip, port)
 );
 
+
 CREATE INDEX services on service_index(ip, port, identifer);
 
-
-create table service_data(
+-- Service data, including fails, blocks, etc
+create table ServiceData(
     id int not null,
 
     -- ctrs
-    alive_cnt int not null,
-    dead_cnt int not null,
+    alive_cnt int DEFAULT 0 not null,
+    dead_cnt int DEFAULT 0 not null,
     
     -- timestamps
-    alive_ts int not null,
-    check_ts int not null,
-    
+    alive_ts DATETIME,
+    check_ts DATETIME DEFAULT CURRENT_TIMESTAMP not null,
     created_ts DATETIME DEFAULT CURRENT_TIMESTAMP not null,
 
-    -- protocol data
-    protocol_data binary,
 
+    blocked boolean DEFAULT 0 not null,
+    blocked_ts DATETIME,
+
+    -- protocol data
+    -- protocol_data binary,
+
+    CPE TEXT DEFAULT "CPE://" not null,
+    
+    PRIMARY KEY(id),
     FOREIGN KEY(id) REFERENCES service_index(id),
-    PRIMARY KEY(id)
+    
 );
 
 
 -- this is basically extension fields for my plugins
 
-create table score_data(
-    id int not null,
+
+-- internal bias data for look ups
+create table ScoreData(
+    id int not null AUTO_INCREMENT,
     parent int not null,
     
-    score float not null,
-    weight_val float not null,
-    bias float not null,
+    score float DEFAULT 0.0 not null,
+    weight_val float DEFAULT 0.0 not null,
+    bias float DEFAULT 0.0 not null,
 
     ts DATETIME DEFAULT CURRENT_TIMESTAMP not null,
-    custom_data binary,
 
     PRIMARY KEY(id),
     FOREIGN KEY(parent) REFERENCES service_index(id)
+);
+
+
+-- Port frequency graph, this is for clients to save and update occasionally them selves to
+create table PortFrequencyGraph(
+    id int not null AUTO_INCREMENT,
+    protocol TINYTEXT,
+    transport_layer tinytext not null,
+    
+    port int not null,
+    frequency float not null,
+
+    PRIMARY KEY(id)
+);
+
+
+create table Latency(
+    id int not null AUTO_INCREMENT,
+    parent int not null,
+    ts DATETIME default CURRENT_TIMESTAMP not null,
+
+    ms float not null,
+
+    PRIMARY KEY(id),
+    
+    parent REFERENCES service_index(id)
+);
+
+
+create table SpeedTest(
+    id int not null AUTO_INCREMENT,
+    parent int not null,
+    
+    ts DATETIME default CURRENT_TIMESTAMP not null,
+
+    mbps float not null,
+
+    PRIMARY KEY(id),
+    parent REFERENCES service_index(id)
 );
 

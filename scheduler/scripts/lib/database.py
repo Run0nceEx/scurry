@@ -4,7 +4,7 @@ import pymysql.cursors
 connection = pymysql.connect(
     host='satori.vps',
     user='root',
-    password='Daisuki1231164107',
+    password='supereztests',
     db='pxdb',
     charset='utf8mb4',
     cursorclass=pymysql.cursors.DictCursor

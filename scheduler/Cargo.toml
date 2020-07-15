@@ -16,7 +16,7 @@ version = "0.3"
 version = "0.8"
 features = ["v4"]
 
-[dependencies.trace]
+[dependencies.tracing]
 version = "0.1"
 
 [dependencies.smallvec]
@@ -24,14 +24,27 @@ version = "1.4"
 
 [dependencies.tokio]
 version = "0.2"
-features = ["parking_lot", "time", "net", "io-util", "sync", "rt-util", "stream", "process"]
+features = ["parking_lot", "full"]
 
 [dependencies.diesel]
 version = "1.4.4"
-features = ["sqlite", "mysql"]
+features = ["mysql"]
 
 [dependencies.tokio-diesel]
 version = "0.3"
 
-[dependencies.corelib]
-path = "../corelib"
+[dependencies.typemap]
+version = "*"
+
+[dependencies.config]
+version = "*"
+
+[dependencies.lazy_static]
+version = "*"
+
+[dependencies.serde]
+version = "*"
+
+
+[dependencies.serde_derive]
+version = "*"

@@ -1,193 +1,319 @@
+#![allow(dead_code)]
 use super::CRON;
 use crate::error::Error;
-use super::proc::*;
 
 use tokio::{
     sync::mpsc,
     time::{timeout, Instant, Duration, DelayQueue, Error as TimeError},
-    stream::StreamExt
+    stream::StreamExt,
+    task::JoinHandle,
 };
 
 use std::{
     collections::HashMap,
+    pin::Pin,
+    task::{Poll, Context},
+    future::Future
 };
 
-const STACK_ALLOC_MAX: usize = 256;
-const MAX_RESCHEDULES: usize = 256;
+use futures::future::poll_fn;
+use tracing::{event, Level};
+use smallvec::SmallVec;
+
 const CHUNK_SIZE: usize = 256;
 
-
-#[derive(Clone)]
-pub struct CronMeta<Job, R> {
-    id: uuid::Uuid,
-    created: Instant,
-    tts: Duration, // time to sleep
-    ttl: Duration, // time to live
-    ctr: usize,    // operation counter
-    retry_ctr: usize, // fail/retry counter
-    state: Job,
-    last_ctrl: Option<CronControls<R>>
-}
-
-
-impl<J, R> CronMeta<J, R> where J: Default {
-    pub fn new(timeout: Duration, fire_at: Duration) -> Self {
-        Self {
-            id: uuid::Uuid::new_v4(),
-            created: Instant::now(),
-            tts: fire_at,
-            ttl: timeout,
-            ctr: 0,
-            retry_ctr: 0,
-            state: J::default(),
-            last_ctrl: None
-        }
-    }
-
-    pub fn update_state(&mut self, ctrl: CronControls<R>) {
-        self.last_ctrl = Some(ctrl);
-    }
-}
-
-pub struct Schedule<Job, R> {
-    val_tx: mpsc::Sender<R>,
-    pending: HashMap<uuid::Uuid, CronMeta<Job, R>>, // collection of pending jobs
-    timer: DelayQueue<uuid::Uuid>,                 // timer for jobs
-    handles: Handles<CronMeta<Job, R>>,             // pending future handles
-}
-
-
-impl<T, R> Schedule<T, R> {
-    pub fn insert(&mut self, meta: CronMeta<T, R>) {
-        // ignoring key bc we dont transverse `self.pending` to remove items from
-        // `self.timer`
-        let _key = self.timer.insert(meta.id, meta.tts);
-        self.pending.insert(meta.id, meta);
-    
-    }
-
-    /// Release jobs that ready to be fired
-    async fn fire(&mut self) -> Result<Vec<CronMeta<T, R>>, TimeError> {
-        let mut jobs: Vec<CronMeta<T, R>> = Vec::with_capacity(CHUNK_SIZE);
-
-        while let Some(res) = self.timer.next().await {
-            let entry = res?;
-
-            if let Some(meta) = self.pending.remove(entry.get_ref()) {
-                jobs.push(meta);
-            }
-        }
-
-        Ok(jobs)
-    }
-   
-    /// partially collect returned values from thread,
-    /// like `tokio::task::JoinHandle.join` but non-blocking
-    async fn join(&mut self) {
-        let mut job_buf = Vec::with_capacity(256);
-        self.handles.partial_join(&mut job_buf).await;
-
-        for mut meta in job_buf {
-            if meta.ctr >= MAX_RESCHEDULES {
-                eprintln!("[{}] exceed reschedule limit", meta.id);
-                continue
-            }
-
-            meta.ctr += 1;
-            self.insert(meta)
-        }
-    }
-    
-    #[inline]
-    pub fn new() -> (Self, mpsc::Receiver<R>) {
-        let (vtx, vrx) = mpsc::channel(1024);
-        
-        let schedule = Self {
-            val_tx: vtx,
-            pending: HashMap::new(),
-            timer: DelayQueue::new(),
-            handles: Handles::new(),
-
-        };
-
-        (schedule, vrx)
-    }
-}
-
-#[derive(Clone)]
-pub enum CronControls<R> {
+#[derive(Copy, Clone)]
+pub enum ScheduleControls<R> {
     /// Operations went according to plan, 
     /// and requesting to be reschedule again
     Reschedule(Duration),
 
-    /// Operations failed and would like to attemp again
-    Retry(Duration),
+    /// Operations failed and would like to attemp again without a specified time
+    Retry,
 
     /// Operation Succeeded and given value
     Success(R),
 
     /// Operation was nullified either because of no result, or unreported error
-    Drop,
+    Drop(R),
+
+    Fuck,
 } 
 
-impl<T, R> Schedule<T, R>
-where
-    T: CRON<CronControls<R>> + Sync + Send + Clone + 'static,
-    R: Send + 'static + Clone
-{   
-    
-    /// Run tasks and collect
-    pub async fn run(&mut self) -> Result<(), Error> {
-        self.join().await;             // Partial join results
-        let jobs = self.fire().await?; // Ready to fire
+#[derive(Clone, Copy)]
+pub struct CronMeta {
+    pub id: uuid::Uuid,
+    pub created: Instant,
+    pub tts: Duration, // time to sleep
+    pub ttl: Duration, // time to live
+    pub ctr: usize,    // operation counter
+    pub max_ctr: usize, // fail/retry counter
+}
 
-        for meta in jobs {
-            let vtx = self.val_tx.clone();
-            
-            let handle = tokio::spawn(async move {
-                return handle_proc(meta, vtx).await; 
-            });
 
-            self.handles.push(handle);
+impl CronMeta {
+    pub fn new(timeout: Duration, fire_in: Duration, max_retry: usize) -> Self {
+        Self {
+            id: uuid::Uuid::new_v4(),
+            created: Instant::now(),
+            tts: fire_in,
+            ttl: timeout,
+            ctr: 0,
+            max_ctr: max_retry,
         }
+    }
+}
 
-        Ok(())
+#[derive(Debug)]
+enum HandlesState<J> {
+    Push(J),
+    Pop,
+    Drop,
+    Pending,
+    Error(Box<dyn std::error::Error>)
+}
+
+#[derive(Debug)]
+pub struct Handle<R> {
+    pub uuid: uuid::Uuid,
+    pub inner: JoinHandle<R>,
+}
+
+/// partially "join" threads to get completed results in manager,
+/// 
+async fn partial_join<R, S>(handles: &mut Vec<Handle<(ScheduleControls<R>, CronMeta, S)>>, reschedules: &mut Vec<(ScheduleControls<R>, CronMeta, S)>) {
+    let mut keys: Vec<usize> = Vec::with_capacity(20000);
+    
+    let mut ctr = 0;
+    
+    for handle in handles.iter_mut() {
+        let resp = poll_fn(|cx: &mut Context| {
+            match Pin::new(&mut handle.inner).poll(cx) {
+                Poll::Pending => Poll::Ready(HandlesState::Pending),
+                Poll::Ready(Ok(resp)) => Poll::Ready(HandlesState::Push(resp)),
+                Poll::Ready(Err(e)) => Poll::Ready(HandlesState::Error(Box::new(e)))
+            }
+        }).await;
+        
+        match resp {
+            HandlesState::Push(result) => {
+                reschedules.push(result);
+                keys.push(ctr);
+            }
+            
+            HandlesState::Error(e) => eprintln!("FUCK {}", e),
+            _ => {}
+        }
+        
+        
+        ctr += 1;
+    }
+
+    for (i, x) in keys.iter().enumerate() {
+        println!("removing handle {}",x - i);
+        println!("x: {}, i: {}",x , i);
+        //remove and balance index for completed handles
+        handles.remove(x - i);
+    }
+}
+
+/// Release jobs that ready to be fired
+/// expected to be
+async fn release_due<S>(
+    timer: &mut DelayQueue<uuid::Uuid>,
+    pending: &mut HashMap<uuid::Uuid, (CronMeta, S)>,
+    job_buf: &mut Vec<(CronMeta, S)>) -> Result<(), TimeError>
+{    
+    while let Some(res) = timer.next().await {
+        let entry = res?;
+        
+        if let Some((meta, state)) = pending.remove(entry.get_ref()) {
+            job_buf.push((meta, state));
+        }
+    }
+    Ok(())
+}
+
+pub struct ThreadController<J, R, S>
+where 
+    J: CRON<Response=ScheduleControls<R>, State=S>,
+    R: Send + Clone + Sync + 'static
+{
+    
+    _job: std::marker::PhantomData<J>,
+    handles: Vec<Handle<(ScheduleControls<R>, CronMeta, S)>>,
+    tx: mpsc::Sender<R>,
+}
+
+impl<J, R, S> ThreadController<J, R, S> 
+where 
+    J: CRON<Response=ScheduleControls<R>, State=S>,
+    R: Send + Clone + Sync + 'static,
+    S: Send + Sync + Clone + 'static
+{
+    #[inline]
+    pub fn new() -> (Self, mpsc::Receiver<R>) {
+        let (vtx, vrx) = mpsc::channel(1024);
+        
+        let tctrl = ThreadController {
+            _job: std::marker::PhantomData::<J>,
+            tx: vtx,
+            handles: Vec::new(),
+
+        };
+
+        (tctrl, vrx)
+    }
+
+    pub fn fire(&mut self, meta: CronMeta, state: S) {
+        let mut vtx = self.tx.clone();
+
+        let handle = tokio::spawn(async move {
+            tracing::event!(target: "Schedule Thread", Level::INFO, "Firing job {}", meta.id);
+            let prev_state = state.clone();
+
+            let (state, ctrl) = match timeout(meta.ttl, J::exec(state)).await {
+                Ok((ctrl, state)) => (state, ctrl),
+                
+                Err(e) => {
+                    //eprintln!("Error: {}", e);
+                    return (ScheduleControls::Retry, meta, prev_state);
+                }
+            };
+            
+            tracing::event!(target: "Schedule Thread", Level::INFO, "Completed job {}", meta.id);
+            
+            match ctrl {
+                ScheduleControls::Success(resp) => {
+                    let resp: R = resp;
+                    if let Err(e) = vtx.send(resp.clone()).await {
+                        eprintln!("{}", e)
+                    }
+                    return (ScheduleControls::Success(resp), meta, state)
+                }
+                _ => return (ctrl, meta, state)    
+            }
+        });
+
+        let hldr = Handle {
+            inner: handle,
+            uuid: meta.id
+        };
+
+        self.handles.push(hldr);
+    }
+
+    /// partially collect returned values from thread,
+    /// like `tokio::task::JoinHandle.join` but non-blocking
+    async fn join(&mut self, buf: &mut Vec<(CronMeta, S)>)
+    {   
+        let mut tmp: Vec<(ScheduleControls<R>, CronMeta, S)> = Vec::new();
+
+        partial_join(&mut self.handles, &mut tmp).await;
+        
+        for (ctrl, mut meta, state) in tmp {
+            let mut vtx = self.tx.clone();
+            
+            match ctrl {
+                ScheduleControls::Reschedule(_) | ScheduleControls::Retry => {     
+                    println!("reschedule");
+                    if let ScheduleControls::Reschedule(tts) = ctrl {
+                        meta.tts = tts;
+                    }
+
+
+                    if meta.ctr <= meta.max_ctr {
+                        meta.ctr += 1;
+                        buf.push((meta, state))
+                    }
+                }
+                ScheduleControls::Drop(r) => {
+                    
+                    println!("dropping whatever ")
+                },
+                ScheduleControls::Fuck => {
+                    println!("we errors")
+                },
+                ScheduleControls::Success(r) => {
+                    if let Err(e) = vtx.send(r.clone()).await {
+                        eprintln!("{}", e)
+                    }
+                }
+            }
+
+            // let mut ctr = 0;
+            // for x in &self.handles {
+            //     ctr += 1;
+            //     if x.uuid == meta.id {
+            //         break
+            //     }
+            // }
+            
+            // self.handles.remove(ctr);
+        }
     }
 }
 
 
-async fn handle_proc<J, R>(mut meta: CronMeta<J, R>, mut vtx: mpsc::Sender<R>) -> Option<CronMeta<J, R>>
+pub struct Schedule<J, R, S>
 where 
-    J: CRON<CronControls<R>> + Clone,
-    R: Clone
-{   
+    J: CRON<Response=ScheduleControls<R>, State=S>,
+    R: Send + Clone + Sync + 'static,
+    S: Send + Clone + Sync
+{
+    timer: DelayQueue<uuid::Uuid>,                 // timer for jobs
+    threads: ThreadController<J, R, S>,
+    bank: HashMap<uuid::Uuid, (CronMeta, S)>,      // collection of pending jobs
+    job_buf: Vec<(CronMeta, S)>
+}
+
+
+impl<J, R, S> Schedule<J, R, S> 
+where 
+    J: CRON<Response=ScheduleControls<R>, State=S>,
+    R: Send + Clone + Sync + 'static,
+    S: Send + Clone + Sync + 'static
+{
+    pub fn insert(&mut self, meta: CronMeta, state: S) {
+        // ignoring key bc we dont transverse `self.pending` to remove items from
+        // `self.timer`
+        let _key = self.timer.insert(meta.id, meta.tts);
+        self.bank.insert(meta.id, (meta, state));
     
-    let ctrl = match timeout(meta.ttl, meta.state.exec()).await {
-        Ok(ctrl) => ctrl,
-        Err(e) => {
-            eprintln!("Error: {}", e);
-            return None
-        }
-    };
-    
-    meta.last_ctrl = Some(ctrl.clone());
-
-    match ctrl {
-        CronControls::Reschedule(tts) | CronControls::Retry(tts) => {
-            meta.tts = tts;
-            return Some(meta)
-        }
-
-        CronControls::Success(resp) => {
-            //todo(adam) add handler for processing meta data
-            if let Err(e) = vtx.send(resp).await {
-                eprintln!("Failed to send back in Job: {}", e)
-            }
-            return None
-        }
-
-        CronControls::Drop => return None,
-
     }
     
+    #[inline]
+    pub fn new() -> (Self, mpsc::Receiver<R>) {
+        let (tctrl, vrx) = ThreadController::new();
+        
+        let schedule = Self {
+            threads: tctrl,
+            bank: HashMap::new(),
+            timer: DelayQueue::new(),
+            job_buf: Vec::with_capacity(2048),
+        };
+
+        (schedule, vrx)
+    }
+
+    /// Run tasks and collect
+    pub async fn spawn_ready(&mut self) -> Result<(), Error> 
+    where 
+        R: Send + 'static + Clone + Sync
+    {   
+        release_due(&mut self.timer, &mut self.bank, &mut self.job_buf).await?;
+        self.threads.join(&mut self.job_buf).await;
+        
+        for (meta, state) in self.job_buf.drain(..) {
+            self.threads.fire(meta, state);
+        }
+
+        Ok(())
+    }
+
+    /// Run tasks and collect
+    pub fn handles(&self) -> usize 
+    {   
+        self.threads.handles.len()
+    }
 }

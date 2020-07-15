@@ -1,57 +1,46 @@
-use mlua::Lua;
-use std::net::SocketAddr;
-use bstr::BString;
-
-use super::std::net::LuaTcpStream;
 use std::collections::HashMap;
 
+use mlua::{Lua, UserData};
+
 use super::error::Error;
-use corelib::{ConnectionHandler, Connector};
+use super::{
+    std::net::{handler::Handler}
 
-struct Engine {
-    interpreter: Lua,
-    protocols: HashMap<BString, Box<ConnectionHandler<LuaTcpStream>>>,
+};
+use corelib::{ConnectionHandler};
+
+
+fn init<T>(handlers: HashMap<String, Handler<T>>) -> Result<Lua, Error>
+where 
+    T: ConnectionHandler<T> + Clone + 'static + Sync + Send + UserData
+{
+    let mut engine = Lua::new();
+    
+    engine.globals().set("HANDLERS", handlers)?;
+
+    engine.globals().set("print", 
+        engine.create_function(|_lua, x: String| { println!("{}", x) })?
+    )?;
+
+    engine.globals().set("eprint", 
+        engine.create_function(|_lua, x: String| { eprintln!("{}", x) })?
+    )?;
+    
+    engine.globals().set("spawn", 
+        engine.create_function(move |_, func: mlua::Function| {
+            tokio::task::spawn_local(async move { func.call_async::<_, ()>(()).await.unwrap() });
+            Ok(())
+        })?
+    )?;
+    
+    
+    Ok(engine)
 }
 
 
-impl Engine {
-    fn init() -> Result<Self, Error> {
-        let lua = {
-
-            let lua = Lua::new();
-
-            
-
-            lua.globals().set("spawn", "");
-
-            lua
-        
-        
-        };
 
 
-
-
-
-        let engine = Engine {
-            interpreter: lua,
-            protocols: HashMap::new(),
-        };
-
-        
-        Ok(engine)
-    }
-
-    fn load_cache(&mut self) -> Result<(), Error>{
-        let globals = &mut self.interpreter.globals();
-        let env_var: mlua::Table = globals.get("ENGINE")?;
-        
-        // self.protocols = env_var.get::<&str, Vec<String>>("ADDONS")?
-        //                     .iter()
-        //                     .map(|x| LuaShimCache(x.to_string()))
-        //                     .collect();
-
-        Ok(())
-    }
-}
-
+// impl<T> IntoHandler<T> for T 
+// where 
+//     T: ConnectionHandler<LuaTcpStream> + 'static + Into<LuaTcpStream>, 
+// {}

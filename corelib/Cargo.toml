@@ -8,8 +8,7 @@ edition = "2018"
 
 
 [features]
-default = ["default_scanners"]
-default_scanners = ["httparse"]
+prce = ["grep-pcre2"]
 
 [dependencies.async-trait]
 version = "0.1"
@@ -21,6 +20,11 @@ features = ["parking_lot", "time", "net", "io-util", "sync", "rt-util"]
 [dependencies.smallvec]
 version = "*"
 
-[dependencies.httparse]
-version = "*"
+
+[dependencies.grep-regex]
+version = "0.1"
+
+[dependencies.grep-pcre2]
+version = "0.1"
 optional = true
+
