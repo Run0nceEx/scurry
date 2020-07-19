@@ -62,13 +62,13 @@ async fn process_subscribers<R>(
     meta_subs: &mut [Box<dyn MetaSubscriber>])
 {
     if let Some((meta, data)) = channel.recv().await {
-        for x in subs {
-            for y in meta_subs.iter_mut() {
-                if let Err(e) = y.handle(&meta).await {
-                    eprintln!("Error while handling [{:?}-{:?}] {}", x, y, e, );    
-                }
+        for y in meta_subs.iter_mut() {
+            if let Err(e) = y.handle(&meta).await {
+                eprintln!("Error while handling [{:?}-{:?}] {}", x, y, e, );    
             }
-
+        }
+        
+        for x in subs {
             if let Err(e) = x.handle(&meta, &data).await {
                 eprintln!("Error while handling [{:?}] {}", x, e);
             }

@@ -3,12 +3,13 @@ use crate::{
         {ScheduleControls, CRON, CronMeta},
         sugar::Subscriber,
     },
-    database::models::latency::LatencyModel,
     error::Error,
 };
+
 use tokio::{
     net::TcpStream    
 };
+
 use std::net::SocketAddr;
 
 
@@ -94,22 +95,3 @@ impl std::fmt::Debug for PrintSub {
     }
 }
 
-
-// #[async_trait::async_trait]
-// impl EventListener<Latency> for LatencyModel {
-//     fn filter<T>(&self, evt_name: &str, meta: CronMeta<T, Latency>) -> bool {
-//         if let Some(meta) = meta.last_ctrl {   
-//             match meta {
-//                 CronControls::Success(resp) => {
-//                     return evt_name == "Latency_test";
-//                 }
-//                 _ => return false
-//             }            
-//         }
-//         false
-//     }
-
-//     async fn handle(&mut self, data: Latency) {
-   
-//     }
-// }
