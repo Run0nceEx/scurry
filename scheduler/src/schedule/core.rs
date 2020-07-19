@@ -43,7 +43,7 @@ pub enum ScheduleControls<R> {
     Fuck,
 } 
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct CronMeta {
     pub id: uuid::Uuid,
     pub created: Instant,
@@ -51,6 +51,7 @@ pub struct CronMeta {
     pub ttl: Duration, // time to live
     pub ctr: usize,    // operation counter
     pub max_ctr: usize, // fail/retry counter
+    pub durations: SmallVec<[Duration; 8]>
 }
 
 
@@ -63,7 +64,24 @@ impl CronMeta {
             ttl: timeout,
             ctr: 0,
             max_ctr: max_retry,
+            durations: SmallVec::new()
         }
+    }
+
+    pub fn avg_duration(&self) -> Duration {
+        let mut i = 0;
+        let mut total = Duration::from_secs(0);
+
+        for time in self.durations {
+            total += time;
+            i +=1 ;
+        }
+
+        total/i
+    }
+
+    pub fn total_duration(&self) -> Duration {
+        self.durations.iter().sum()
     }
 }
 
