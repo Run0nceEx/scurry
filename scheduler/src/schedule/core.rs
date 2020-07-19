@@ -22,6 +22,9 @@ use smallvec::SmallVec;
 
 const CHUNK_SIZE: usize = 256;
 
+pub type Singal<R, S> = (CronMeta, (ScheduleControls<R>, S));
+
+
 #[derive(Debug, Copy, Clone)]
 pub enum ScheduleControls<R> {
     /// Operations went according to plan, 
@@ -81,7 +84,7 @@ async fn release_due<S>(
     Ok(())
 }
 
-fn spawn_worker<J, R, S>(mut vtx: mpsc::Sender<(ScheduleControls<R>, CronMeta, S)>, meta: CronMeta, state: S)
+fn spawn_worker<J, R, S>(mut vtx: mpsc::Sender<Singal<R, S>>, meta: CronMeta, state: S)
 where 
     J: CRON<Response=ScheduleControls<R>, State=S>,
     R: Send + Clone + Sync + 'static,
@@ -100,7 +103,7 @@ where
         };
         
         tracing::event!(target: "Schedule Thread", Level::INFO, "Completed job {}", meta.id);
-        vtx.send((ctrl, meta, state)).await;
+        vtx.send((meta, (ctrl, state))).await;
     });
 }
 
@@ -113,7 +116,7 @@ where
     S: Send + Clone + Sync
 {
     timer: DelayQueue<uuid::Uuid>,                 // timer for jobs
-    tx: mpsc::Sender<(ScheduleControls<R>, CronMeta, S)>,
+    tx: mpsc::Sender<Singal<R, S>>,
     bank: HashMap<uuid::Uuid, (CronMeta, S)>,      // collection of pending jobs
     job_buf: Vec<(CronMeta, S)>,
     _job: std::marker::PhantomData<J>
@@ -134,8 +137,8 @@ where
     }
     
     #[inline]
-    pub fn new() -> (Self, mpsc::Receiver<(ScheduleControls<R>, CronMeta, S)>) {
-        let (tx, rx) = mpsc::channel(100000);
+    pub fn new(channel_size: usize) -> (Self, mpsc::Receiver<Singal<R, S>>) {
+        let (tx, rx) = mpsc::channel(channel_size);
         
         let schedule = Self {
             tx: tx,

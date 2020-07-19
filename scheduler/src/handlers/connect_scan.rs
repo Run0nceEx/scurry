@@ -76,8 +76,8 @@ impl PrintSub {
 }
 
 #[async_trait::async_trait]
-impl Subscriber<(ScheduleControls<PortState>, CronMeta, Job)> for PrintSub {
-    async fn handle(&mut self, data: &(ScheduleControls<PortState>, CronMeta, Job)) -> Result<(), Error> {
+impl Subscriber<(ScheduleControls<PortState>, Job)> for PrintSub {
+    async fn handle(&mut self, meta: &CronMeta, data: &(ScheduleControls<PortState>, Job)) -> Result<(), Error> {
         self.ctr += 1;
         //println!("[{:?}] {:?}", self.ctr, data);
         if self.ctr == 20000 {
@@ -88,7 +88,7 @@ impl Subscriber<(ScheduleControls<PortState>, CronMeta, Job)> for PrintSub {
     }
 }
 
-impl std::fmt::Display for PrintSub {
+impl std::fmt::Debug for PrintSub {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "PrintSub")
     }
