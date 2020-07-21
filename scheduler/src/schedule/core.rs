@@ -14,24 +14,6 @@ use std::{
     collections::HashMap,
 };
 
-/// Release jobs that ready to be fired
-/// expected to be
-async fn release_due<S>(
-    timer: &mut DelayQueue<uuid::Uuid>,
-    pending: &mut HashMap<uuid::Uuid, (CronMeta, S)>,
-    job_buf: &mut Vec<(CronMeta, S)>) -> Result<(), TimeError>
-{    
-    while let Some(res) = timer.next().await {
-        let entry = res?;
-        
-        if let Some((meta, state)) = pending.remove(entry.get_ref()) {
-            job_buf.push((meta, state));
-        }
-    }
-    Ok(())
-}
-
-
 pub struct Schedule<J, R, S>
 where 
     J: CRON<Response=R, State=S>,
@@ -74,12 +56,18 @@ where
     }
 
     /// Release tasks from Timer
+    /// If `max` is 0, no limit is occured
     pub async fn release_ready(&mut self, reschedule_jobs: &mut Vec<(CronMeta, S)>) -> Result<(), Error> 
     where 
         R: Send + 'static + Clone + Sync
-    {   
-        release_due(&mut self.timer, &mut self.bank, reschedule_jobs).await?;
-
+    {
+        while let Some(res) = self.timer.next().await {
+            let entry = res?;
+    
+            if let Some((meta, state)) = self.bank.remove(entry.get_ref()) {
+                reschedule_jobs.push((meta, state));
+            }
+        }
         Ok(())
     }
 }

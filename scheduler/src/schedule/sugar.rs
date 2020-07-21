@@ -67,9 +67,6 @@ async fn process_subscribers<R, S>(
     meta_subs: &mut [Box<dyn MetaSubscriber>],
     ret_buf: &mut Vec<(CronMeta, S)>
 ){
-    
-    
-    
     if let Some((mut meta, ctrl, state)) = channel.recv().await {
         match ctrl {
             SignalControl::Success(data) => {
@@ -153,9 +150,11 @@ where
     /// It processes all the data the comes across the channel including reschedule
     pub async fn process_reschedules(&mut self, rescheduled_buf: &mut Vec<(CronMeta, S)>) {
         self.listener.process(rescheduled_buf).await;
+        //println!("")
     }
 
     /// Fires jobs that are ready
+    /// If the max counter is 0 then no limiter will be set
     pub async fn release_ready(&mut self, rescheduled_buf: &mut Vec<(CronMeta, S)>) -> Result<(), Error> {
         self.schedule.release_ready(rescheduled_buf).await?;
         Ok(())
@@ -181,8 +180,6 @@ fn spawn_worker<J, R, S>(
 {
     tokio::spawn(async move {
         tracing::event!(target: "Schedule Thread", tracing::Level::INFO, "Firing job {}", meta.id);
-
-        let prev_state = state.clone();
 
         let ctrl = match tokio::time::timeout(meta.ttl, J::exec(&mut state)).await {
             Ok(Ok(ctrl)) => ctrl,

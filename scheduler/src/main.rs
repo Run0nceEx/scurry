@@ -1,5 +1,4 @@
 #[macro_use] extern crate diesel;
-#[macro_use] extern crate lazy_static;
 #[macro_use] extern crate tracing;
 
 // behavioral
@@ -58,7 +57,6 @@ async fn main() -> Result<(), Error> {
 	
 
 	let mut job_buf = Vec::new();
-
 	loop {
 		job_pool.release_ready(&mut job_buf).await?;
 		job_pool.fire_jobs(&mut job_buf);
