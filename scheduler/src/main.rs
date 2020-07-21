@@ -60,11 +60,8 @@ async fn main() -> Result<(), Error> {
 	let mut job_buf = Vec::new();
 
 	loop {
-		job_pool.process_reschedules(&mut job_buf).await;
-		println!("{}", job_buf.len());
 		job_pool.release_ready(&mut job_buf).await?;
 		job_pool.fire_jobs(&mut job_buf);
-		
-		job_buf.clear();
+		job_pool.process_reschedules(&mut job_buf).await;
 	}
 }

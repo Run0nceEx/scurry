@@ -153,7 +153,6 @@ where
     /// It processes all the data the comes across the channel including reschedule
     pub async fn process_reschedules(&mut self, rescheduled_buf: &mut Vec<(CronMeta, S)>) {
         self.listener.process(rescheduled_buf).await;
-        //println!("")
     }
 
     /// Fires jobs that are ready
@@ -180,7 +179,6 @@ fn spawn_worker<J, R, S>(
     R: Send + Clone + Sync + 'static,
     S: Send + Sync + Clone + 'static
 {
-    println!("spawning");
     tokio::spawn(async move {
         tracing::event!(target: "Schedule Thread", tracing::Level::INFO, "Firing job {}", meta.id);
 
