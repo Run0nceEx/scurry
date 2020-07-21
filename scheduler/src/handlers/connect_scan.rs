@@ -45,11 +45,11 @@ impl CRON for OpenPortJob
     type State = Job;
     type Response = PortState;
 
-    async fn exec(state: Job) -> Result<SignalControl<(Option<Self::Response>, Self::State)>, Error>
+    async fn exec(state: &mut Job) -> Result<SignalControl<Self::Response>, Error>
     {
         match scan(state.addr).await {
-            Ok(_)   => Ok(SignalControl::Success((Some(PortState::Open(state.addr)), state))),
-            Err(_e) => Ok(SignalControl::Success((Some(PortState::Closed(state.addr)), state)))
+            Ok(_)   => Ok(SignalControl::Success(PortState::Open(state.addr))),
+            Err(_e) => Ok(SignalControl::Success(PortState::Closed(state.addr)))
         }
     }
 }
@@ -74,8 +74,8 @@ impl PrintSub {
 }
 
 #[async_trait::async_trait]
-impl Subscriber<(Option<PortState>, Job)> for PrintSub {
-    async fn handle(&mut self, meta: &CronMeta, data: &(Option<PortState>, Job)) -> Result<(), Error> {
+impl Subscriber<PortState, Job> for PrintSub {
+    async fn handle(&mut self, meta: &CronMeta, data: &PortState, state: &Job) -> Result<(), Error> {
         self.ctr += 1;
 
         let notify = [200, 1000, 10000, 50000, 100000, 150000, 200000];

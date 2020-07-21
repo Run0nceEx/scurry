@@ -1,13 +1,12 @@
 #![allow(dead_code)]
-use super::CRON;
-use super::sig::{SignalControl};
+use super::{CRON, SignalControl};
 use super::meta::CronMeta;
 
 use crate::error::Error;
 
 use tokio::{
     sync::mpsc,
-    time::{timeout, DelayQueue, Error as TimeError},
+    time::{DelayQueue, Error as TimeError},
     stream::StreamExt,
 };
 
@@ -32,50 +31,6 @@ async fn release_due<S>(
     Ok(())
 }
 
-fn spawn_worker<J, R, S>(
-    mut vtx: mpsc::Sender<(CronMeta, SignalControl<(Option<R>, S)>)>,
-    meta: CronMeta,
-    state: S
-) where 
-    J: CRON<Response=R, State=S>,
-    R: Send + Clone + Sync + 'static,
-    S: Send + Sync + Clone + 'static
-{
-    tokio::spawn(async move {
-        tracing::event!(target: "Schedule Thread", tracing::Level::INFO, "Firing job {}", meta.id);
-
-        let prev_state = state.clone();
-
-        let ctrl = match timeout(meta.ttl, J::exec(state)).await {
-            Ok(Ok(ctrl)) => ctrl,
-            
-            Err(e)   => {
-                if meta.ctr >= meta.max_ctr {
-                    println!("timeout error? {}", e );
-                    SignalControl::Retry((None, prev_state))
-                }
-                else {
-                    SignalControl::Drop((None, prev_state))
-                }
-            }
-
-            //Something other than a timeout error
-            Ok(Err(e)) => {
-                eprintln!("Error in Job: {}", e);   
-                SignalControl::Fuck
-            }
-        };
-        
-        let id = meta.id;
-        
-        if let Err(e) = vtx.send((meta, ctrl)).await {
-            eprintln!("channel error: {}", e)
-        }
-        tracing::event!(target: "Schedule Thread", tracing::Level::INFO, "Completed job {}", id);
-    });
-}
-
-
 
 pub struct Schedule<J, R, S>
 where 
@@ -83,10 +38,9 @@ where
     R: Send + Clone + Sync + 'static,
     S: Send + Clone + Sync
 {
-    tx: mpsc::Sender<(CronMeta, SignalControl<(Option<R>, S)>)>,
+    pub tx: mpsc::Sender<(CronMeta, SignalControl<R>, S)>,
     timer: DelayQueue<uuid::Uuid>,                 // timer for jobs
     bank: HashMap<uuid::Uuid, (CronMeta, S)>,      // collection of pending jobs
-    job_buf: Vec<(CronMeta, S)>,
 
     _job: std::marker::PhantomData<J>
 }
@@ -106,30 +60,26 @@ where
     }
     
     #[inline]
-    pub fn new(channel_size: usize) -> (Self, mpsc::Receiver<(CronMeta, SignalControl<(Option<R>, S)>)>) {
+    pub fn new(channel_size: usize) -> (Self, mpsc::Receiver<(CronMeta, SignalControl<R>, S)>) {
         let (tx, rx) = mpsc::channel(channel_size);
         
         let schedule = Self {
             tx: tx,
             bank: HashMap::new(),
             timer: DelayQueue::new(),
-            job_buf: Vec::with_capacity(2048),
             _job: std::marker::PhantomData
         };
 
         (schedule, rx)
     }
 
-    /// Run tasks and collect
-    pub async fn spawn_ready(&mut self) -> Result<(), Error> 
+    /// Release tasks from Timer
+    pub async fn release_ready(&mut self, reschedule_jobs: &mut Vec<(CronMeta, S)>) -> Result<(), Error> 
     where 
         R: Send + 'static + Clone + Sync
     {   
-        release_due(&mut self.timer, &mut self.bank, &mut self.job_buf).await?;
+        release_due(&mut self.timer, &mut self.bank, reschedule_jobs).await?;
 
-        for (meta, state) in self.job_buf.drain(..) {
-            spawn_worker::<J, R, S>(self.tx.clone(), meta, state);
-        }
         Ok(())
     }
 }

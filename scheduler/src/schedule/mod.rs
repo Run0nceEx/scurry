@@ -1,15 +1,31 @@
 mod core;
-mod sig;
 
 pub mod meta;
 pub mod sugar;
 
 pub use crate::schedule::core::*;
-pub use sig::*;
 use crate::error::Error;
 
+use std::time::Duration;
 
-pub type FuckinNonSense = SignalControl<Option<()>>;
+
+#[derive(Debug, Copy, Clone)]
+pub enum SignalControl<T> {
+    /// Operations went according to plan, 
+    /// and requesting to be reschedule again
+    Reschedule(Duration),
+
+    /// Operation Succeeded and given value
+    Success(T),
+
+    /// Operations failed and would like to attemp again without a specified time
+    Retry,
+
+    /// Operation was nullified either because of no result, or unreported error
+    Drop,
+
+    Fuck,
+}
 
 /// Used in scheduler (Command run on)
 #[async_trait::async_trait]
@@ -18,6 +34,6 @@ pub trait CRON: Sized {
     type Response;
 
     /// Run function, and then append to parent if more jobs are needed
-    async fn exec(state: Self::State) -> Result<SignalControl<(Option<Self::Response>, Self::State)>, Error>;
+    async fn exec(state: &mut Self::State) -> Result<SignalControl<Self::Response>, Error>;
 }
 

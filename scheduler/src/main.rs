@@ -6,7 +6,6 @@
 mod schedule;
 mod handlers;
 mod error;
-mod state;
 
 // persistence components
 mod database;
@@ -31,7 +30,7 @@ async fn main() -> Result<(), Error> {
 	let mut reader = BufReader::new(file);
 	let mut buf = String::new();
 	
-	let mut i = 0;
+	let mut i: u32 = 0;
 
 	while let Ok(n) = reader.read_line(&mut buf) {
 		if n > 0 {
@@ -58,9 +57,14 @@ async fn main() -> Result<(), Error> {
 	}
 	
 
-	//let mut job_buf = Vec::new();
+	let mut job_buf = Vec::new();
+
 	loop {
-		job_pool.process_jobs().await?;
-		job_pool.process_events().await;
+		job_pool.process_reschedules(&mut job_buf).await;
+		println!("{}", job_buf.len());
+		job_pool.release_ready(&mut job_buf).await?;
+		job_pool.fire_jobs(&mut job_buf);
+		
+		job_buf.clear();
 	}
 }
