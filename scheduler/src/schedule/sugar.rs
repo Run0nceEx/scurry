@@ -4,7 +4,9 @@ Public interface for schedules
 */
 
 use super::{
-    core::{CronMeta, Schedule, ScheduleControls},
+    core::{Schedule},
+    meta::CronMeta,
+    sig::*,
     CRON,
 };
 use tokio::sync::mpsc;
@@ -17,23 +19,22 @@ pub trait Subscriber<T>: std::fmt::Debug {
     async fn handle(&mut self, meta: &CronMeta, data: &T) -> Result<(), Error>;
 }
 
-
 #[async_trait::async_trait]
 pub trait MetaSubscriber: std::fmt::Debug {
     async fn handle(&mut self, data: &CronMeta) -> Result<(), Error>;
 }
 
-struct Listener<R>
+struct Listener<T>
 {
-    channel: mpsc::Receiver<(CronMeta, R)>,
-    subscribers: SmallVec<[Box<dyn Subscriber<R>>; 8]>,
+    channel: mpsc::Receiver<(CronMeta, SignalControl<T>)>,
+    subscribers: SmallVec<[Box<dyn Subscriber<T>>; 8]>,
     meta_subscribers: SmallVec<[Box<dyn MetaSubscriber>; 8]>
 }
 
 
 impl<R> Listener<R>
 {
-    pub fn new(channel: mpsc::Receiver<(CronMeta, R)>) -> Self {
+    pub fn new(channel: mpsc::Receiver<(CronMeta, SignalControl<R>)>) -> Self {
         Self {
             channel,
             subscribers: SmallVec::new(),
@@ -41,8 +42,13 @@ impl<R> Listener<R>
         }
     }
 
-    pub async fn process(&mut self) where R: std::fmt::Debug {
-        process_subscribers(&mut self.channel, &mut self.subscribers[..], &mut self.meta_subscribers[..]).await;
+    pub async fn process(&mut self, rescheduled_jobs: &mut Vec<(CronMeta, R)>) where R: std::fmt::Debug {
+        process_subscribers(
+            &mut self.channel,
+            &mut self.subscribers[..],
+            &mut self.meta_subscribers[..],
+            rescheduled_jobs
+        ).await;
     }
 
 
@@ -56,22 +62,47 @@ impl<R> Listener<R>
     }
 }
 
-async fn process_subscribers<R>(
-    channel: &mut mpsc::Receiver<(CronMeta, R)>,
-    subs: &mut [Box<dyn Subscriber<R>>],
-    meta_subs: &mut [Box<dyn MetaSubscriber>])
-{
-    if let Some((meta, data)) = channel.recv().await {
-        for meta_hdlr in meta_subs.iter_mut() {
-            if let Err(e) = meta_hdlr.handle(&meta).await {
-                eprintln!("Error while handling [{:?}] {}", meta_hdlr, e);    
+async fn process_subscribers<T>(
+    channel: &mut mpsc::Receiver<(CronMeta, SignalControl<T>)>,
+    subs: &mut [Box<dyn Subscriber<T>>],
+    meta_subs: &mut [Box<dyn MetaSubscriber>],
+    ret_buf: &mut Vec<(CronMeta, T)>
+){
+    if let Some((mut meta, ctrl)) = channel.recv().await {
+        match ctrl {
+            SignalControl::Success(data) => {
+                for meta_hdlr in meta_subs.iter_mut() {
+                    if let Err(e) = meta_hdlr.handle(&meta).await {
+                        eprintln!("Error while handling [{:?}] {}", meta_hdlr, e);    
+                    }
+                }
+                
+                for hdlr in subs.iter_mut() {
+                    if let Err(e) = hdlr.handle(&meta, &data).await {
+                        eprintln!("Error while handling [{:?}] {}", hdlr, e);
+                    }
+                }
             }
-        }
-        
-        for hdlr in subs {
-            if let Err(e) = hdlr.handle(&meta, &data).await {
-                eprintln!("Error while handling [{:?}] {}", hdlr, e);
-            }
+
+            SignalControl::Reschedule(state, tts) => {
+                if meta.ctr <= meta.max_ctr {
+                    meta.tts = tts;
+                    meta.ctr += 1;
+                    ret_buf.push((meta, state))
+                }
+            },
+            
+            SignalControl::Retry(state) => {
+                if meta.ctr <= meta.max_ctr {
+                    meta.ctr += 1;
+                    ret_buf.push((meta, state))
+                }
+            },
+            
+            SignalControl::Drop(state) => {
+                println!("dropping");
+            },
+            SignalControl::Fuck => {}
         }
     }
 }
@@ -79,21 +110,22 @@ async fn process_subscribers<R>(
 
 pub struct ScheduledJobPool<J, R, S>
 where
-	J: CRON<Response = ScheduleControls<R>, State = S>,
+	J: CRON<Response = R, State = S>,
 	R: Send + Clone + Sync + 'static,
 	S: Send + Clone + Sync,
 {
 	schedule: Schedule<J, R, S>,
-	listener: Listener<(ScheduleControls<R>, S)>,
+	listener: Listener<(Option<R>, S)>,
 }
 
 
 impl<J, R, S> ScheduledJobPool<J, R, S>
 where
-	J: CRON<Response = ScheduleControls<R>, State = S>,
+	J: CRON<Response = R, State = S>,
 	R: Send + Clone + Sync + 'static + std::fmt::Debug,
 	S: Send + Clone + Sync + 'static + std::fmt::Debug
 {   
+
 	pub fn new(channel_size: usize) -> Self {
 		let (schedule, rx) = Schedule::new(channel_size);
 		Self {
@@ -104,7 +136,7 @@ where
 
 	pub fn subscribe<T>(&mut self, sub: T)
 	where 
-		T: Subscriber<(ScheduleControls<R>, S)> + 'static
+		T: Subscriber<(Option<R>, S)> + 'static
 	{
 		self.listener.add_sub(sub);
 	}
@@ -116,7 +148,15 @@ where
     
     /// Processes the Events produced from jobs against the subscribers
     pub async fn process_events(&mut self) {
-        self.listener.process().await;
+
+        let mut rescheduled_buf: Vec<(CronMeta, (Option<R>, S))> = Vec::new();
+
+        self.listener.process(&mut rescheduled_buf).await;
+
+        for (meta, (_response, state)) in rescheduled_buf.iter() {
+            println!("redoing [{}]", meta.id);
+            self.schedule.insert(meta.clone(), state.clone())
+        }
     }
 
     /// Fires jobs that are ready

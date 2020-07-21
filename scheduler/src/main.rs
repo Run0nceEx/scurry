@@ -12,11 +12,10 @@ mod state;
 mod database;
 
 // ephemeral persistence components maybe eventually?
-
-
 use schedule::{
 	sugar::{ScheduledJobPool},
 };
+
 use handlers::connect_scan::{OpenPortJob, Job, PortState, PrintSub};
 use error::Error;
 use std::io::{Read, BufReader, BufRead};
@@ -25,16 +24,16 @@ use std::io::{Read, BufReader, BufRead};
 #[tokio::main]
 async fn main() -> Result<(), Error> {
 
-	let mut job_pool: ScheduledJobPool<OpenPortJob, PortState, Job> = ScheduledJobPool::new();
+	let mut job_pool: ScheduledJobPool<OpenPortJob, PortState, Job> = ScheduledJobPool::new(16*1024);
 	job_pool.subscribe(PrintSub::new());
 
 	let file = std::fs::OpenOptions::new().read(true).open("/tmp/list")?;
 	let mut reader = BufReader::new(file);
 	let mut buf = String::new();
+	
 	let mut i = 0;
 
 	while let Ok(n) = reader.read_line(&mut buf) {
-		i += 5;
 		if n > 0 {
 			match buf.trim().parse() {
 				Ok(addr) =>  {
@@ -45,23 +44,23 @@ async fn main() -> Result<(), Error> {
 						2
 					);
 				},
-
 				Err(e) => eprintln!("failed to parse {}", buf.trim())	
 			}
+			i += 1;
 		}
+
 		else {
+			println!("lines read: {}", i);
 			break
 		}
+		
 		buf.clear();
 	}
 	
+
+	//let mut job_buf = Vec::new();
 	loop {
 		job_pool.process_jobs().await?;
 		job_pool.process_events().await;
-		//std::thread::sleep(std::time::Duration::from_secs(5));
-		//println!("{:?}", job_pool.handles());
 	}
-			
-
-	//Ok(())
 }

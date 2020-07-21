@@ -1,7 +1,8 @@
 use crate::{
     schedule::{
-        {ScheduleControls, CRON, CronMeta},
+        {SignalControl, CRON},
         sugar::Subscriber,
+        meta::CronMeta,
     },
     error::Error,
 };
@@ -42,15 +43,13 @@ pub struct OpenPortJob;
 impl CRON for OpenPortJob
 {
     type State = Job;
-    type Response = ScheduleControls<PortState>;
+    type Response = PortState;
 
-    async fn exec(state: Job) -> (Self::Response, Self::State)
+    async fn exec(state: Job) -> Result<SignalControl<(Option<Self::Response>, Self::State)>, Error>
     {
         match scan(state.addr).await {
-            Ok(_)   => return (ScheduleControls::Success(PortState::Open(state.addr)), state), 
-            Err(_e) => {
-                return (ScheduleControls::Success(PortState::Closed(state.addr)), state)    
-            }
+            Ok(_)   => Ok(SignalControl::Success((Some(PortState::Open(state.addr)), state))),
+            Err(_e) => Ok(SignalControl::Success((Some(PortState::Closed(state.addr)), state)))
         }
     }
 }
@@ -63,28 +62,32 @@ async fn scan(addr: SocketAddr) -> Result<(), crate::error::Error> {
 }
 
 pub struct PrintSub {
-    instant: std::time::Instant,
     ctr: u64,
 }
 
 impl PrintSub {
     pub fn new() -> Self {
         Self {
-            instant: std::time::Instant::now(),
             ctr: 0
         }
     }
 }
 
 #[async_trait::async_trait]
-impl Subscriber<(ScheduleControls<PortState>, Job)> for PrintSub {
-    async fn handle(&mut self, meta: &CronMeta, data: &(ScheduleControls<PortState>, Job)) -> Result<(), Error> {
+impl Subscriber<(Option<PortState>, Job)> for PrintSub {
+    async fn handle(&mut self, meta: &CronMeta, data: &(Option<PortState>, Job)) -> Result<(), Error> {
         self.ctr += 1;
-        //println!("[{:?}] {:?}", self.ctr, data);
-        if self.ctr == 20000 {
-          println!("Done");
-          panic!("");
+
+        let notify = [200, 1000, 10000, 50000, 100000, 150000, 200000];
+        if notify.contains(&self.ctr) {
+            println!("Reached {}", self.ctr);
         }
+        
+        // if self.ctr == 20000 {
+        //   println!("Done");
+        //   panic!("");
+        // }
+        
         Ok(())
     }
 }

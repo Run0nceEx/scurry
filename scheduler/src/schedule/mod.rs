@@ -1,9 +1,15 @@
 mod core;
+mod sig;
+
+pub mod meta;
 pub mod sugar;
 
 pub use crate::schedule::core::*;
-pub use crate::schedule::core::CronMeta;
+pub use sig::*;
+use crate::error::Error;
 
+
+pub type FuckinNonSense = SignalControl<Option<()>>;
 
 /// Used in scheduler (Command run on)
 #[async_trait::async_trait]
@@ -12,6 +18,6 @@ pub trait CRON: Sized {
     type Response;
 
     /// Run function, and then append to parent if more jobs are needed
-    async fn exec(state: Self::State) -> (Self::Response, Self::State);
+    async fn exec(state: Self::State) -> Result<SignalControl<(Option<Self::Response>, Self::State)>, Error>;
 }
 
