@@ -1,3 +1,7 @@
+// This is a scanner thats concepts
+// and resources are adopted from the nmap project
+// theres probably 100 things im doing wrong, and that im missing (syn packets for ex)
+// i do accept contributions, and they'll probably be on this file.
 use crate::{
     schedule::{
         {SignalControl, CRON},
@@ -74,32 +78,3 @@ async fn scan(addr: SocketAddr) -> Result<(), crate::error::Error> {
 pub struct PrintSub {
     ctr: u64,
 }
-
-impl PrintSub {
-    pub fn new() -> Self {
-        Self {
-            ctr: 0
-        }
-    }
-}
-
-#[async_trait::async_trait]
-impl Subscriber<PortState, Job> for PrintSub {
-    async fn handle(&mut self, meta: &mut CronMeta, signal: &mut SignalControl, resp: &Option<PortState>, state: &mut Job) -> Result<(), Error> {
-        self.ctr += 1;
-
-        let notify = [200, 1000, 10000, 50000, 100000, 150000, 200000];
-        if notify.contains(&self.ctr) {
-            println!("Reached {}", self.ctr);
-        }
-        
-        Ok(())
-    }
-}
-
-impl std::fmt::Debug for PrintSub {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "PrintSub")
-    }
-}
-

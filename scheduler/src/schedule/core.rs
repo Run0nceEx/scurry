@@ -6,7 +6,7 @@ use crate::error::Error;
 
 use tokio::{
     sync::mpsc,
-    time::{DelayQueue, Error as TimeError},
+    time::DelayQueue,
     stream::StreamExt,
 };
 

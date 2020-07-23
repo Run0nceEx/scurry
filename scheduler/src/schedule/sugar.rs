@@ -8,9 +8,11 @@ use super::{
     meta::CronMeta,
     CRON, SignalControl
 };
+
 use tokio::sync::mpsc;
 use smallvec::SmallVec;
 use crate::error::Error;
+use std::time::Instant;
 
 
 #[async_trait::async_trait]
@@ -139,11 +141,19 @@ where
 		T: Subscriber<R, S> + 'static
 	{
 		self.listener.add_sub(sub);
+    }
+    
+    pub fn subscribe_meta_handler<T>(&mut self, sub: T)
+	where 
+		T: MetaSubscriber + 'static
+	{
+        self.listener.add_meta_sub(sub);
 	}
 
 	pub fn insert(&mut self, job: S,  timeout: std::time::Duration, fire_in: std::time::Duration, max_retry: usize) {
-        let meta = CronMeta::new(timeout, fire_in, max_retry);
+        let meta = CronMeta::new(timeout, fire_in, J::name(), max_retry);
         self.schedule.insert(meta, job);
+    
     }
     
     /// syntacially this function is called `process_reschedules` but it does do more
@@ -154,7 +164,6 @@ where
     }
 
     /// Fires jobs that are ready
-    /// If the max counter is 0 then no limiter will be set
     pub async fn release_ready(&mut self, rescheduled_buf: &mut Vec<(CronMeta, S)>) -> Result<(), Error> {
         self.schedule.release_ready(rescheduled_buf).await?;
         Ok(())
@@ -171,15 +180,17 @@ where
 
 fn spawn_worker<J, R, S>(
     mut vtx: mpsc::Sender<(CronMeta, SignalControl, Option<R>, S)>,
-    meta: CronMeta,
-    mut state: S
-) where 
+    mut meta: CronMeta,
+    mut state: S)
+where 
     J: CRON<Response=R, State=S>,
     R: Send + Clone + Sync + 'static,
     S: Send + Sync + Clone + 'static
 {
     tokio::spawn(async move {
         tracing::event!(target: "Schedule Thread", tracing::Level::INFO, "Firing job {}", meta.id);
+
+        let now = Instant::now();
 
         let (sig, resp) = match tokio::time::timeout(meta.ttl, J::exec(&mut state)).await {
             
@@ -194,9 +205,9 @@ fn spawn_worker<J, R, S>(
                 }
             }
         };
-        
+        meta.durations.push(now.elapsed());
         let id = meta.id;
-        
+
         if let Err(e) = vtx.send((meta, sig, resp, state)).await {
             eprintln!("channel error: {}", e)
         }

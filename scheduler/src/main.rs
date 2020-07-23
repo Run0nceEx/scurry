@@ -14,7 +14,11 @@ use schedule::{
 	sugar::{ScheduledJobPool},
 };
 
-use handlers::connect_scan::{OpenPortJob, Job, PortState, PrintSub};
+use handlers::{
+	connect_scan::{OpenPortJob, Job, PortState, PrintSub},
+	fail_rate::WarnConstFailRate
+
+};
 use error::Error;
 use std::io::{Read, BufReader, BufRead};
 
@@ -33,8 +37,10 @@ async fn main() -> Result<(), Error> {
 		tracing::subscriber::set_global_default(subscriber)
         .expect("setting default subscriber failed");
 	
-		let mut job_pool: ScheduledJobPool<OpenPortJob, PortState, Job> = ScheduledJobPool::new(16*1024);
+	let mut job_pool: ScheduledJobPool<OpenPortJob, PortState, Job> = ScheduledJobPool::new(16*1024);
 	job_pool.subscribe(PrintSub::new());
+	job_pool.subscribe_meta_handler(WarnConstFailRate::new((0.65, 10000)));
+
 
 	let file = std::fs::OpenOptions::new().read(true).open("/tmp/list")?;
 	let mut reader = BufReader::new(file);
