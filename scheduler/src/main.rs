@@ -18,11 +18,22 @@ use handlers::connect_scan::{OpenPortJob, Job, PortState, PrintSub};
 use error::Error;
 use std::io::{Read, BufReader, BufRead};
 
+use tracing::{info, Level};
+use tracing_subscriber::FmtSubscriber;
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
-
-	let mut job_pool: ScheduledJobPool<OpenPortJob, PortState, Job> = ScheduledJobPool::new(16*1024);
+	let subscriber = FmtSubscriber::builder()
+		// all spans/events with a level higher than TRACE (e.g, debug, info, warn, etc.)
+		// will be written to stdout.
+		.with_max_level(Level::TRACE)
+		// completes the builder.
+		.finish();
+	
+		tracing::subscriber::set_global_default(subscriber)
+        .expect("setting default subscriber failed");
+	
+		let mut job_pool: ScheduledJobPool<OpenPortJob, PortState, Job> = ScheduledJobPool::new(16*1024);
 	job_pool.subscribe(PrintSub::new());
 
 	let file = std::fs::OpenOptions::new().read(true).open("/tmp/list")?;

@@ -45,11 +45,15 @@ impl CRON for OpenPortJob
     type State = Job;
     type Response = PortState;
 
-    async fn exec(state: &mut Job) -> Result<SignalControl<Self::Response>, Error>
+    async fn exec(state: &mut Job) -> Result<(SignalControl, Option<Self::Response>), Error>
     {
         match scan(state.addr).await {
-            Ok(_)   => Ok(SignalControl::Success(PortState::Open(state.addr))),
-            Err(_e) => Ok(SignalControl::Success(PortState::Closed(state.addr)))
+            Ok(_)   => Ok(
+                (SignalControl::Success, Some(PortState::Open(state.addr)))
+            ),
+            Err(_e) => Ok(
+                (SignalControl::Success, Some(PortState::Closed(state.addr)))
+            )
         }
     }
 }
@@ -75,18 +79,13 @@ impl PrintSub {
 
 #[async_trait::async_trait]
 impl Subscriber<PortState, Job> for PrintSub {
-    async fn handle(&mut self, meta: &CronMeta, data: &PortState, state: &Job) -> Result<(), Error> {
+    async fn handle(&mut self, meta: &mut CronMeta, signal: &mut SignalControl, resp: &Option<PortState>, state: &mut Job) -> Result<(), Error> {
         self.ctr += 1;
 
         let notify = [200, 1000, 10000, 50000, 100000, 150000, 200000];
         if notify.contains(&self.ctr) {
             println!("Reached {}", self.ctr);
         }
-        
-        // if self.ctr == 20000 {
-        //   println!("Done");
-        //   panic!("");
-        // }
         
         Ok(())
     }

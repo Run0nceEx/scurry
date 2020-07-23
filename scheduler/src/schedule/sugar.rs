@@ -15,17 +15,22 @@ use crate::error::Error;
 
 #[async_trait::async_trait]
 pub trait Subscriber<R, S>: std::fmt::Debug {
-    async fn handle(&mut self, meta: &CronMeta, data: &R, state: &S) -> Result<(), Error>;
+    async fn handle(&mut self, 
+        meta: &mut CronMeta,
+        signal: &mut SignalControl,
+        data: &Option<R>,
+        state: &mut S
+    ) -> Result<(), Error>;
 }
 
 #[async_trait::async_trait]
 pub trait MetaSubscriber: std::fmt::Debug {
-    async fn handle(&mut self, data: &CronMeta) -> Result<(), Error>;
+    async fn handle(&mut self, meta: &mut CronMeta, signal: &mut SignalControl) -> Result<(), Error>;
 }
 
 struct Listener<R, S>
 {
-    channel: mpsc::Receiver<(CronMeta, SignalControl<R>, S)>,
+    channel: mpsc::Receiver<(CronMeta, SignalControl, Option<R>, S)>,
     subscribers: SmallVec<[Box<dyn Subscriber<R, S>>; 8]>,
     meta_subscribers: SmallVec<[Box<dyn MetaSubscriber>; 8]>
 }
@@ -33,7 +38,7 @@ struct Listener<R, S>
 
 impl<R, S> Listener<R, S>
 {
-    pub fn new(channel: mpsc::Receiver<(CronMeta, SignalControl<R>, S)>) -> Self {
+    pub fn new(channel: mpsc::Receiver<(CronMeta, SignalControl, Option<R>, S)>) -> Self {
         Self {
             channel,
             subscribers: SmallVec::new(),
@@ -62,27 +67,26 @@ impl<R, S> Listener<R, S>
 }
 
 async fn process_subscribers<R, S>(
-    channel: &mut  mpsc::Receiver<(CronMeta, SignalControl<R>, S)>,
+    channel: &mut  mpsc::Receiver<(CronMeta, SignalControl, Option<R>, S)>,
     subs: &mut [Box<dyn Subscriber<R, S>>],
     meta_subs: &mut [Box<dyn MetaSubscriber>],
     ret_buf: &mut Vec<(CronMeta, S)>
 ){
-    if let Some((mut meta, ctrl, state)) = channel.recv().await {
-        match ctrl {
-            SignalControl::Success(data) => {
-                for meta_hdlr in meta_subs.iter_mut() {
-                    if let Err(e) = meta_hdlr.handle(&meta).await {
-                        eprintln!("Error while handling [{:?}] {}", meta_hdlr, e);    
-                    }
-                }
-                
-                for hdlr in subs.iter_mut() {
-                    if let Err(e) = hdlr.handle(&meta, &data, &state).await {
-                        eprintln!("Error while handling [{:?}] {}", hdlr, e);
-                    }
-                }
+    if let Some((mut meta, mut ctrl, resp, mut state)) = channel.recv().await {
+        
+        for meta_hdlr in meta_subs.iter_mut() {
+            if let Err(e) = meta_hdlr.handle(&mut meta, &mut ctrl).await {
+                eprintln!("Error while handling [{:?}] {}", meta_hdlr, e);    
             }
-
+        }
+        
+        for hdlr in subs.iter_mut() {
+            if let Err(e) = hdlr.handle(&mut meta, &mut ctrl, &resp, &mut state).await {
+                eprintln!("Error while handling [{:?}] {}", hdlr, e);
+            }
+        }
+        
+        match ctrl {
             SignalControl::Reschedule(tts) => {
                 if meta.ctr <= meta.max_ctr {
                     meta.tts = tts;
@@ -90,19 +94,15 @@ async fn process_subscribers<R, S>(
                     ret_buf.push((meta, state))
                 }
             },
-            
+                
             SignalControl::Retry => {
                 if meta.ctr <= meta.max_ctr {
                     meta.ctr += 1;
                     ret_buf.push((meta, state))
                 }
             },
-            
-            SignalControl::Drop => {
-                println!("dropping");
-            },
-
-            SignalControl::Fuck => {}
+                
+            SignalControl::Drop | SignalControl::Success | SignalControl::Fuck => {}
         }
     }
 }
@@ -170,7 +170,7 @@ where
 
 
 fn spawn_worker<J, R, S>(
-    mut vtx: mpsc::Sender<(CronMeta, SignalControl<R>, S)>,
+    mut vtx: mpsc::Sender<(CronMeta, SignalControl, Option<R>, S)>,
     meta: CronMeta,
     mut state: S
 ) where 
@@ -181,29 +181,23 @@ fn spawn_worker<J, R, S>(
     tokio::spawn(async move {
         tracing::event!(target: "Schedule Thread", tracing::Level::INFO, "Firing job {}", meta.id);
 
-        let ctrl = match tokio::time::timeout(meta.ttl, J::exec(&mut state)).await {
-            Ok(Ok(ctrl)) => ctrl,
+        let (sig, resp) = match tokio::time::timeout(meta.ttl, J::exec(&mut state)).await {
             
-            Err(e) => {
+            Ok(Ok((sig, resp))) => (sig, resp),
+
+            Err(_) | Ok(Err(_)) => {
                 if meta.ctr >= meta.max_ctr {
-                    println!("timeout error? {}", e );
-                    SignalControl::Retry
+                    (SignalControl::Retry, None)
                 }
                 else {
-                    SignalControl::Fuck
+                    (SignalControl::Drop, None)
                 }
-            }
-
-            //Something other than a timeout error
-            Ok(Err(e)) => {
-                eprintln!("Error in Job: {}", e);   
-                SignalControl::Fuck
             }
         };
         
         let id = meta.id;
         
-        if let Err(e) = vtx.send((meta, ctrl, state)).await {
+        if let Err(e) = vtx.send((meta, sig, resp, state)).await {
             eprintln!("channel error: {}", e)
         }
 

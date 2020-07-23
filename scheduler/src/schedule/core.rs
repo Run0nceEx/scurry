@@ -20,7 +20,7 @@ where
     R: Send + Clone + Sync + 'static,
     S: Send + Clone + Sync
 {
-    pub tx: mpsc::Sender<(CronMeta, SignalControl<R>, S)>,
+    pub tx: mpsc::Sender<(CronMeta, SignalControl, Option<R>, S)>,
     timer: DelayQueue<uuid::Uuid>,                 // timer for jobs
     bank: HashMap<uuid::Uuid, (CronMeta, S)>,      // collection of pending jobs
 
@@ -42,7 +42,7 @@ where
     }
     
     #[inline]
-    pub fn new(channel_size: usize) -> (Self, mpsc::Receiver<(CronMeta, SignalControl<R>, S)>) {
+    pub fn new(channel_size: usize) -> (Self, mpsc::Receiver<(CronMeta, SignalControl, Option<R>, S)>) {
         let (tx, rx) = mpsc::channel(channel_size);
         
         let schedule = Self {

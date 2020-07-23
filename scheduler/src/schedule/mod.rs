@@ -3,6 +3,7 @@ mod core;
 pub mod meta;
 pub mod sugar;
 
+
 pub use crate::schedule::core::*;
 use crate::error::Error;
 
@@ -10,13 +11,12 @@ use std::time::Duration;
 
 
 #[derive(Debug, Copy, Clone)]
-pub enum SignalControl<T> {
+pub enum SignalControl {
     /// Operations went according to plan, 
+    Success,
+    
     /// and requesting to be reschedule again
     Reschedule(Duration),
-
-    /// Operation Succeeded and given value
-    Success(T),
 
     /// Operations failed and would like to attemp again without a specified time
     Retry,
@@ -34,6 +34,6 @@ pub trait CRON: Sized {
     type Response;
 
     /// Run function, and then append to parent if more jobs are needed
-    async fn exec(state: &mut Self::State) -> Result<SignalControl<Self::Response>, Error>;
+    async fn exec(state: &mut Self::State) -> Result<(SignalControl, Option<Self::Response>), Error>;
 }
 

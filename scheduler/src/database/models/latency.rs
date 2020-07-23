@@ -1,4 +1,7 @@
 use diesel::prelude::*;
 
 
-pub struct LatencyModel {}
+pub struct LatencyModel {
+    
+
+}
