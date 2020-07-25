@@ -1,7 +1,7 @@
 mod core;
 
 pub mod meta;
-pub mod sugar;
+pub mod pool;
 
 
 pub use crate::schedule::core::*;

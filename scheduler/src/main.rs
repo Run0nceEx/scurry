@@ -11,12 +11,12 @@ mod database;
 
 // ephemeral persistence components maybe eventually?
 use schedule::{
-	sugar::{ScheduledJobPool},
+	pool::{CronPool},
 };
 
 use handlers::{
 	connect_scan::{OpenPortJob, Job, PortState, PrintSub},
-	fail_rate::WarnConstFailRate
+	fail_rate::FailRateMonitor;
 
 };
 use error::Error;
@@ -37,9 +37,11 @@ async fn main() -> Result<(), Error> {
 		tracing::subscriber::set_global_default(subscriber)
         .expect("setting default subscriber failed");
 	
-	let mut job_pool: ScheduledJobPool<OpenPortJob, PortState, Job> = ScheduledJobPool::new(16*1024);
+
+	
+	let mut job_pool: CronPool<OpenPortJob, PortState, Job> = CronPool::new(16*1024);
 	job_pool.subscribe(PrintSub::new());
-	job_pool.subscribe_meta_handler(WarnConstFailRate::new((0.65, 10000)));
+	job_pool.subscribe_meta_handler(FailRateMonitor::new((0.65, 10000)));
 
 
 	let file = std::fs::OpenOptions::new().read(true).open("/tmp/list")?;

@@ -1,7 +1,7 @@
 use crate::{
     schedule::{
         {SignalControl, CRON},
-        sugar::Subscriber,
+        pool::Subscriber,
         meta::CronMeta,
     },
     error::Error,
