@@ -1,5 +1,4 @@
 #![allow(dead_code)]
-use super::{CRON, SignalControl};
 use super::meta::CronMeta;
 
 use crate::error::Error;
@@ -12,7 +11,43 @@ use tokio::{
 
 use std::{
     collections::HashMap,
+    time::Duration
 };
+
+#[derive(Debug, Copy, Clone)]
+pub enum SignalControl {
+    /// Drop memory, and give a boolean to tell if we connected 
+    Success(bool), // Boolean to signify to the scheduler if we connected to the target or not
+    
+    /// and requesting to be reschedule again
+    Reschedule(Duration),
+
+    /// Operations failed and would like to attemp again, 
+    /// it will sleep again for whatever it's time to sleep paramenter was set to. (tts)
+    Retry,
+
+    /// Operations failed and would like to attemp again, 
+    /// but does not sleep before execution
+    RetryNow,
+
+    /// Operation was nullified either because of no result, or unreported error
+    Drop,
+
+    Fuck,
+}
+
+/// Used in scheduler (Command run on)
+#[async_trait::async_trait]
+pub trait CRON: Sized + std::fmt::Debug {
+    type State;
+    type Response;
+
+    /// Run function, and then append to parent if more jobs are needed
+    async fn exec(state: &mut Self::State) -> Result<(SignalControl, Option<Self::Response>), Error>;
+
+    fn name() -> String;
+}
+
 
 pub struct Schedule<J, R, S>
 where 
@@ -71,3 +106,6 @@ where
         Ok(())
     }
 }
+
+
+

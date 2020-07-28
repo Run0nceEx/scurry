@@ -14,7 +14,6 @@ pub struct CronMeta {
     pub handler_name: String,
 }
 
-
 impl CronMeta {
     pub fn new(timeout: Duration, fire_in: Duration, handler: String, max_retry: usize) -> Self {
         Self {
@@ -29,17 +28,17 @@ impl CronMeta {
         }
     }
 
-    pub fn avg_duration(&self) -> Duration {
-        let mut i = 0;
-        let mut total = Duration::from_secs(0);
+    // pub fn avg_duration(&self) -> Duration {
+    //     let mut i = 0;
+    //     let mut total = Duration::from_secs(0);
 
-        for time in self.durations.iter() {
-            total += *time;
-            i +=1 ;
-        }
+    //     for time in self.durations.iter() {
+    //         total += *time;
+    //         i +=1 ;
+    //     }
 
-        total/i
-    }
+    //     total/i
+    // }
 
     pub fn total_duration(&self) -> Duration {
         self.durations.iter().sum()

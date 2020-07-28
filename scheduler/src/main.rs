@@ -1,32 +1,32 @@
 #[macro_use] extern crate diesel;
 #[macro_use] extern crate tracing;
 
-// behavioral
+
 mod schedule;
+use schedule::pool::CronPool;
+
+
 mod handlers;
-mod error;
-
-// persistence components
-mod database;
-
-// ephemeral persistence components maybe eventually?
-use schedule::{
-	pool::{CronPool},
-};
-
 use handlers::{
 	connect_scan::{OpenPortJob, Job, PortState, PrintSub},
-	fail_rate::FailRateMonitor;
-
+	watchdog::WatchDog
 };
+
+
+mod error;
 use error::Error;
-use std::io::{Read, BufReader, BufRead};
+
+
+mod database;
+
+use tokio::io::{BufReader};
+use tokio::prelude::*;
 
 use tracing::{info, Level};
 use tracing_subscriber::FmtSubscriber;
 
-#[tokio::main]
-async fn main() -> Result<(), Error> {
+
+fn setup_subscribers() {
 	let subscriber = FmtSubscriber::builder()
 		// all spans/events with a level higher than TRACE (e.g, debug, info, warn, etc.)
 		// will be written to stdout.
@@ -34,23 +34,28 @@ async fn main() -> Result<(), Error> {
 		// completes the builder.
 		.finish();
 	
-		tracing::subscriber::set_global_default(subscriber)
+	tracing::subscriber::set_global_default(subscriber)
         .expect("setting default subscriber failed");
-	
+}
 
+
+
+#[tokio::main]
+async fn main() -> Result<(), Error> {
+	setup_subscribers();
 	
 	let mut job_pool: CronPool<OpenPortJob, PortState, Job> = CronPool::new(16*1024);
 	job_pool.subscribe(PrintSub::new());
-	job_pool.subscribe_meta_handler(FailRateMonitor::new((0.65, 10000)));
+	job_pool.subscribe_meta_handler(WatchDog::new());
 
 
-	let file = std::fs::OpenOptions::new().read(true).open("/tmp/list")?;
+	let file = tokio::fs::File::open("/tmp/list").await?;
 	let mut reader = BufReader::new(file);
 	let mut buf = String::new();
 	
 	let mut i: u32 = 0;
 
-	while let Ok(n) = reader.read_line(&mut buf) {
+	while let Ok(n) = reader.read_line(&mut buf).await {
 		if n > 0 {
 			match buf.trim().parse() {
 				Ok(addr) =>  {
@@ -73,12 +78,13 @@ async fn main() -> Result<(), Error> {
 		
 		buf.clear();
 	}
-	
 
 	let mut job_buf = Vec::new();
+	
 	loop {
 		job_pool.release_ready(&mut job_buf).await?;
 		job_pool.fire_jobs(&mut job_buf);
 		job_pool.process_reschedules(&mut job_buf).await;
 	}
+
 }

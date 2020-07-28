@@ -50,10 +50,10 @@ impl CRON for OpenPortJob
     {
         match scan(state.addr).await {
             Ok(_)   => Ok(
-                (SignalControl::Success, Some(PortState::Open(state.addr)))
+                (SignalControl::Success(true), Some(PortState::Open(state.addr)))
             ),
             Err(_e) => Ok(
-                (SignalControl::Success, Some(PortState::Closed(state.addr)))
+                (SignalControl::Success(false), Some(PortState::Closed(state.addr)))
             )
         }
     }
