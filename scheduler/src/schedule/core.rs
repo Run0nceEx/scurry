@@ -14,6 +14,18 @@ use std::{
     time::Duration
 };
 
+/// Used in scheduler (Command run on)
+#[async_trait::async_trait]
+pub trait CRON: std::fmt::Debug {
+    type State;
+    type Response;
+
+    /// Run function, and then append to parent if more jobs are needed
+    async fn exec(state: &mut Self::State) -> Result<(SignalControl, Option<Self::Response>), Error>;
+
+    fn name() -> String;
+}
+
 #[derive(Debug, Copy, Clone)]
 pub enum SignalControl {
     /// Drop memory, and give a boolean to tell if we connected 
@@ -36,24 +48,11 @@ pub enum SignalControl {
     Fuck,
 }
 
-/// Used in scheduler (Command run on)
-#[async_trait::async_trait]
-pub trait CRON: Sized + std::fmt::Debug {
-    type State;
-    type Response;
-
-    /// Run function, and then append to parent if more jobs are needed
-    async fn exec(state: &mut Self::State) -> Result<(SignalControl, Option<Self::Response>), Error>;
-
-    fn name() -> String;
-}
-
-
 pub struct Schedule<J, R, S>
 where 
     J: CRON<Response=R, State=S>,
-    R: Send + Clone + Sync + 'static,
-    S: Send + Clone + Sync
+    R: Send + Sync,
+    S: Send + Sync
 {
     pub tx: mpsc::Sender<(CronMeta, SignalControl, Option<R>, S)>,
     timer: DelayQueue<uuid::Uuid>,                 // timer for jobs
@@ -66,8 +65,8 @@ where
 impl<J, R, S> Schedule<J, R, S> 
 where 
     J: CRON<Response=R, State=S>,
-    R: Send + Clone + Sync + 'static,
-    S: Send + Clone + Sync + 'static
+    R: Send + Sync,
+    S: Send + Sync
 {
     pub fn insert(&mut self, meta: CronMeta, state: S) {
         // ignoring key bc we dont transverse `self.pending` to remove items from
@@ -93,13 +92,9 @@ where
     /// Release tasks from Timer
     /// If `max` is 0, no limit is occured
     pub async fn release_ready(&mut self, reschedule_jobs: &mut Vec<(CronMeta, S)>) -> Result<(), Error> 
-    where 
-        R: Send + 'static + Clone + Sync
     {
         while let Some(res) = self.timer.next().await {
-            let entry = res?;
-    
-            if let Some((meta, state)) = self.bank.remove(entry.get_ref()) {
+            if let Some((meta, state)) = self.bank.remove(res?.get_ref()) {
                 reschedule_jobs.push((meta, state));
             }
         }

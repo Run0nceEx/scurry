@@ -11,7 +11,7 @@ use crate::{
     error::Error,
 };
 
-
+use tokio::net::TcpStream;
 use std::net::SocketAddr;
 
 
@@ -19,6 +19,14 @@ use std::net::SocketAddr;
 pub struct Job {
     addr: SocketAddr,
 }
+
+
+#[derive(Debug)]
+pub struct Peer {
+    addr: TcpStream,
+
+}
+
 
 #[derive(Debug)]
 pub struct Worker;
@@ -31,6 +39,7 @@ impl CRON for Worker
 
     async fn exec(state: &mut Job) -> Result<(SignalControl, Option<Self::Response>), Error>
     {
+
         Ok((SignalControl::Success(false), None))
     }
 

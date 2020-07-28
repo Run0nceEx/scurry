@@ -28,22 +28,23 @@ pub trait MetaSubscriber: std::fmt::Debug {
 pub struct CronPool<J, R, S>
 where
 	J: CRON<Response = R, State = S>,
-	R: Send + Clone + Sync + 'static,
-	S: Send + Clone + Sync,
+	R: Send + Sync,
+	S: Send + Sync,
 {
 	schedule: Schedule<J, R, S>,
    
     channel: mpsc::Receiver<(CronMeta, SignalControl, Option<R>, S)>,
     subscribers: SmallVec<[Box<dyn Subscriber<R, S>>; 8]>,
-    meta_subscribers: SmallVec<[Box<dyn MetaSubscriber>; 8]>
+    meta_subscribers: SmallVec<[Box<dyn MetaSubscriber>; 8]>,
+    job_cnt: usize
 }
 
 
 impl<J, R, S> CronPool<J, R, S>
 where
 	J: CRON<Response = R, State = S>,
-	R: Send + Clone + Sync + 'static + std::fmt::Debug,
-	S: Send + Clone + Sync + 'static + std::fmt::Debug
+	R: Send + Sync + 'static + std::fmt::Debug,
+	S: Send + Sync + 'static + std::fmt::Debug
 {   
 
 	pub fn new(channel_size: usize) -> Self {
@@ -52,9 +53,15 @@ where
 			schedule: schedule,
             channel: rx,
             subscribers: SmallVec::new(),
-            meta_subscribers: SmallVec::new()
+            meta_subscribers: SmallVec::new(),
+            job_cnt: 0
 		}
-	}
+    }
+    
+    #[inline]
+    pub fn job_count(&self) -> usize {
+        self.job_cnt
+    }
 
 	pub fn subscribe<T>(&mut self, sub: T)
 	where 
@@ -73,6 +80,7 @@ where
 	pub fn insert(&mut self, job: S,  timeout: Duration, fire_in: Duration, max_retry: usize) {
         let meta = CronMeta::new(timeout, fire_in, J::name(), max_retry);
         self.schedule.insert(meta, job);
+        self.job_cnt += 1;
     }
 
     /// syntacially this function is called `process_reschedules` but it does do more
@@ -81,7 +89,7 @@ where
         if let Some((mut meta, mut ctrl, resp, mut state)) = self.channel.recv().await {
             for meta_hdlr in self.meta_subscribers.iter_mut() {
                 if let Err(e) = meta_hdlr.handle(&mut meta, &mut ctrl).await {
-                    eprintln!("Error while handling [{:?}] {}", meta_hdlr, e);    
+                    eprintln!("Error while handling meta data [{:?}] {}", meta_hdlr, e);    
                 }
             }
             
@@ -112,8 +120,8 @@ where
                         rescheduled_jobs.push((meta, state))
                     }
                 },
-                                    
-                SignalControl::Drop | SignalControl::Success(_) | SignalControl::Fuck => {}
+
+                SignalControl::Drop | SignalControl::Success(_) | SignalControl::Fuck => self.job_cnt -= 1
             }
         }
     }
@@ -139,15 +147,14 @@ fn spawn_worker<J, R, S>(
     mut state: S)
 where 
     J: CRON<Response=R, State=S>,
-    R: Send + Clone + Sync + 'static,
-    S: Send + Sync + Clone + 'static
+    R: Send + Sync + 'static,
+    S: Send + Sync + 'static
 {
     tokio::spawn(async move {
         tracing::event!(target: "Schedule Thread", tracing::Level::INFO, "Firing job {}", meta.id);
         let now = Instant::now();
 
         let (sig, resp) = match tokio::time::timeout(meta.ttl, J::exec(&mut state)).await {
-            
             Ok(Ok((sig, resp))) => (sig, resp),
 
             Err(_) | Ok(Err(_)) => {
@@ -159,6 +166,7 @@ where
                 }
             }
         };
+
         meta.durations.push(now.elapsed());
         let id = meta.id;
 

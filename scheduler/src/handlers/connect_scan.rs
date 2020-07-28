@@ -7,12 +7,8 @@ use crate::{
     error::Error,
 };
 
-use tokio::{
-    net::TcpStream    
-};
-
+use tokio::net::TcpStream;
 use std::net::SocketAddr;
-
 
 #[derive(Debug, Clone)]
 pub struct Job {

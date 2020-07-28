@@ -46,7 +46,7 @@ async fn main() -> Result<(), Error> {
 	
 	let mut job_pool: CronPool<OpenPortJob, PortState, Job> = CronPool::new(16*1024);
 	job_pool.subscribe(PrintSub::new());
-	job_pool.subscribe_meta_handler(WatchDog::new());
+	job_pool.subscribe_meta_handler(WatchDog::new().await);
 
 
 	let file = tokio::fs::File::open("/tmp/list").await?;

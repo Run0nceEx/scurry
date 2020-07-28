@@ -28,18 +28,6 @@ impl CronMeta {
         }
     }
 
-    // pub fn avg_duration(&self) -> Duration {
-    //     let mut i = 0;
-    //     let mut total = Duration::from_secs(0);
-
-    //     for time in self.durations.iter() {
-    //         total += *time;
-    //         i +=1 ;
-    //     }
-
-    //     total/i
-    // }
-
     pub fn total_duration(&self) -> Duration {
         self.durations.iter().sum()
     }

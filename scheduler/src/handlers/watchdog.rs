@@ -70,7 +70,7 @@ pub enum NetworkState {
 
 
 #[derive(Debug, Clone, Copy)]
-struct JobPoolSample {
+pub struct JobPoolSample {
     sample_size: usize,
     duration_bounds: (Duration, Duration),
     fail_bounds: (f32, f32),
@@ -95,7 +95,6 @@ impl JobPoolSample {
             duration_bounds,
             sample_size,
         }
-        
     }
 
     pub fn percentage(&self) -> f32 {
@@ -123,26 +122,35 @@ pub async fn www_available() -> bool {
 const SAMPLES_TAKEN: usize = 5;
 const SAMPLE_SIZE: usize = 100;
 
-
 #[derive(Debug)]
 pub struct WatchDog {
     state: NetworkState,        
     samples: SmallVec<[JobPoolSample; SAMPLES_TAKEN]>,
     sample_ctr: usize,
-
 }
 
 // a simple logger to check if a schedule is failing consistently
 impl WatchDog {
-    pub fn new() -> Self {
+    pub async fn new() -> Self {
+        let net = {
+            if www_available().await {
+                NetworkState::Ok
+            } else {
+                NetworkState::Failure {
+                    at: Instant::now(),
+                    next_check: (Instant::now(), Duration::from_secs(10))
+                }
+            }
+        };
+
         Self {
-            state: NetworkState::Ok,
+            state: net,
             samples: SmallVec::new(),
             sample_ctr: 0,
         }
     }
-}
 
+}
 
 const SAMPLE_EVERY: usize = 40000;
 
@@ -151,7 +159,7 @@ impl MetaSubscriber for WatchDog {
     async fn handle(&mut self, meta: &mut CronMeta, signal: &mut SignalControl) -> Result<(), Error> {
 
         match &self.state {
-            NetworkState::Failure{next_check: (mut last, tts), at} => {
+            NetworkState::Failure{next_check: (last, tts), at} => {
                 if last.elapsed() >= *tts {
                     if www_available().await {
                         eprintln!(
@@ -165,7 +173,6 @@ impl MetaSubscriber for WatchDog {
 
                     }
                 }
-
                 *signal = SignalControl::Retry;
             }
 
@@ -197,12 +204,12 @@ impl MetaSubscriber for WatchDog {
                             };
                         }
                     }
+
                     if self.samples.len() >= SAMPLE_SIZE-1 {
                         self.samples.pop();
                     }
 
-                    self.samples.push(sample)
-                    //
+                    self.samples.push(sample);
                 }
             }
 
@@ -233,15 +240,12 @@ impl MetaSubscriber for WatchDog {
 
 }
 
-const FISHY_FAIL_RATE: f32 = 0.05;
-const FISHY_SUCESS_RATE: f32 = 0.95;
-
 fn check_sample(sample: &JobPoolSample, ttl: Duration) -> IndicatorFlags { 
     IndicatorFlags {
-        fishy_positive_rate: FISHY_SUCESS_RATE  <= sample.percentage(),
-        fishy_negative_rate: sample.percentage()<= FISHY_FAIL_RATE,
-        fishy_low_lifetime:  sample.avg_time()  <= Duration::from_secs_f32(0.5),
-        fishy_high_lifetime: ttl-Duration::from_secs_f32(1.5) <= sample.avg_time() 
+        fishy_positive_rate: sample.fail_bounds.1 <= sample.percentage(),
+        fishy_negative_rate: sample.percentage() <= sample.fail_bounds.0,
+        fishy_low_lifetime:  sample.avg_time() <= sample.duration_bounds.0,
+        fishy_high_lifetime: sample.duration_bounds.1 <= sample.avg_time() 
     }
 }
 
