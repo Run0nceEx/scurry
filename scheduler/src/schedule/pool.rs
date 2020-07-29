@@ -80,12 +80,12 @@ where
 	pub fn insert(&mut self, job: S,  timeout: Duration, fire_in: Duration, max_retry: usize) {
         let meta = CronMeta::new(timeout, fire_in, J::name(), max_retry);
         self.schedule.insert(meta, job);
-        self.job_cnt += 1;
     }
 
     /// syntacially this function is called `process_reschedules` but it does do more
     /// It processes all the data the comes across the channel including reschedule
     pub async fn process_reschedules(&mut self, rescheduled_jobs: &mut Vec<(CronMeta, S)>) {
+        
         if let Some((mut meta, mut ctrl, resp, mut state)) = self.channel.recv().await {
             for meta_hdlr in self.meta_subscribers.iter_mut() {
                 if let Err(e) = meta_hdlr.handle(&mut meta, &mut ctrl).await {
@@ -100,6 +100,7 @@ where
             }
 
             meta.ctr += 1;
+            self.job_cnt -= 1;
 
             match ctrl {
                 SignalControl::Reschedule(tts) => {
@@ -121,7 +122,7 @@ where
                     }
                 },
 
-                SignalControl::Drop | SignalControl::Success(_) | SignalControl::Fuck => self.job_cnt -= 1
+                SignalControl::Drop | SignalControl::Success(_) | SignalControl::Fuck => {}
             }
         }
     }
@@ -133,6 +134,7 @@ where
     }
 
     pub fn fire_jobs(&mut self, rescheduled_buf: &mut Vec<(CronMeta, S)>) {
+        self.job_cnt += 1;
         for (meta, state) in rescheduled_buf.drain(..) {
             spawn_worker::<J, R, S>(self.schedule.tx.clone(), meta, state)
         }
