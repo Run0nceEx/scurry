@@ -1,3 +1,4 @@
+#![feature(test)]
 #[macro_use] extern crate diesel;
 #[macro_use] extern crate tracing;
 
@@ -16,8 +17,12 @@ use handlers::{
 mod error;
 use error::Error;
 
-
 mod database;
+
+#[cfg(test)]
+#[feature(test)]
+mod tests;
+
 
 use tokio::io::{BufReader};
 use tokio::prelude::*;

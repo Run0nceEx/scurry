@@ -3,7 +3,11 @@ use super::{
     meta::CronMeta,
 };
 
-use tokio::sync::mpsc;
+use tokio::{
+    sync::mpsc,
+    time::timeout
+};
+
 use smallvec::SmallVec;
 use std::time::{Instant, Duration};
 
@@ -77,30 +81,42 @@ where
         self.meta_subscribers.push(Box::new(sub));
 	}
 
+    pub fn get_subscribers(&self) -> &[Box<dyn Subscriber<R, S>>] {
+        &self.subscribers[..]
+    }
+
 	pub fn insert(&mut self, job: S,  timeout: Duration, fire_in: Duration, max_retry: usize) {
         let meta = CronMeta::new(timeout, fire_in, J::name(), max_retry);
         self.schedule.insert(meta, job);
     }
 
+
+
+    async fn process_subscribers(&mut self, meta: &mut CronMeta, ctrl: &mut SignalControl, state: &mut S, response: &Option<R>) {
+        for meta_hdlr in self.meta_subscribers.iter_mut() {
+            if let Err(e) = meta_hdlr.handle(meta, ctrl).await {
+                eprintln!("Error while handling meta data [{:?}] {}", meta_hdlr, e);    
+            }
+        }
+        
+        for hdlr in self.subscribers.iter_mut() {
+            if let Err(e) = hdlr.handle(meta, ctrl, response, state).await {
+                eprintln!("Error while handling [{:?}] {}", hdlr, e);
+            }
+        }
+    }
+
+
     /// syntacially this function is called `process_reschedules` but it does do more
     /// It processes all the data the comes across the channel including reschedule
-    pub async fn process_reschedules(&mut self, rescheduled_jobs: &mut Vec<(CronMeta, S)>) {
-        
-        if let Some((mut meta, mut ctrl, resp, mut state)) = self.channel.recv().await {
-            for meta_hdlr in self.meta_subscribers.iter_mut() {
-                if let Err(e) = meta_hdlr.handle(&mut meta, &mut ctrl).await {
-                    eprintln!("Error while handling meta data [{:?}] {}", meta_hdlr, e);    
-                }
-            }
-            
-            for hdlr in self.subscribers.iter_mut() {
-                if let Err(e) = hdlr.handle(&mut meta, &mut ctrl, &resp, &mut state).await {
-                    eprintln!("Error while handling [{:?}] {}", hdlr, e);
-                }
-            }
+    pub async fn process_reschedules(&mut self, rescheduled_jobs: &mut Vec<(CronMeta, S)>) -> Option<(CronMeta, Option<R>, S)> {
+        const RECV_TIMEOUT: f32 = 0.2;
+
+        if let Ok(Some((mut meta, mut ctrl, resp, mut state))) = timeout(Duration::from_secs_f32(RECV_TIMEOUT), self.channel.recv()).await {            
+            self.job_cnt -= 1;
+            self.process_subscribers(&mut meta, &mut ctrl, &mut state, &resp).await;
 
             meta.ctr += 1;
-            self.job_cnt -= 1;
 
             match ctrl {
                 SignalControl::Reschedule(tts) => {
@@ -122,9 +138,12 @@ where
                     }
                 },
 
-                SignalControl::Drop | SignalControl::Success(_) | SignalControl::Fuck => {}
+                // lets not be a black box
+                SignalControl::Drop | SignalControl::Success(_) | SignalControl::Fuck => return Some((meta, resp, state))
             }
         }
+        
+        None
     }
 
     /// Fires jobs that are ready
@@ -141,8 +160,6 @@ where
     }
 }
 
-
-
 fn spawn_worker<J, R, S>(
     mut vtx: mpsc::Sender<(CronMeta, SignalControl, Option<R>, S)>,
     mut meta: CronMeta,
@@ -156,7 +173,7 @@ where
         tracing::event!(target: "Schedule Thread", tracing::Level::INFO, "Firing job {}", meta.id);
         let now = Instant::now();
 
-        let (sig, resp) = match tokio::time::timeout(meta.ttl, J::exec(&mut state)).await {
+        let (sig, resp) = match timeout(meta.ttl, J::exec(&mut state)).await {
             Ok(Ok((sig, resp))) => (sig, resp),
 
             Err(_) | Ok(Err(_)) => {
