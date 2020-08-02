@@ -21,9 +21,6 @@ fn noop(b: &mut Bencher) {
 
 }
 
-
-
-
 #[bench]
 fn rand_sleep(b: &mut Bencher) {
     use super::*;

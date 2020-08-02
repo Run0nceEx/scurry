@@ -149,14 +149,13 @@ impl WatchDog {
             sample_ctr: 0,
         }
     }
-
 }
 
 const SAMPLE_EVERY: usize = 40000;
 
 #[async_trait::async_trait]
 impl MetaSubscriber for WatchDog {
-    async fn handle(&mut self, meta: &mut CronMeta, signal: &mut SignalControl) -> Result<(), Error> {
+    async fn handle(&mut self, meta: &mut CronMeta, signal: &SignalControl) -> Result<SignalControl, Error> {
 
         match &self.state {
             NetworkState::Failure{next_check: (last, tts), at} => {
@@ -170,10 +169,10 @@ impl MetaSubscriber for WatchDog {
                     }
                     else {
                         self.state = NetworkState::Failure{at: *at, next_check: (Instant::now(), meta.tts)}
-
                     }
                 }
-                *signal = SignalControl::Retry;
+
+                return Ok(SignalControl::Retry);
             }
 
             NetworkState::Sampling(mut sample) => {
@@ -186,7 +185,7 @@ impl MetaSubscriber for WatchDog {
                         }
                     },
                     
-                    SignalControl::Drop | SignalControl::Fuck => sample.neg += 1,
+                    SignalControl::Drop => sample.neg += 1,
                     _ => {} 
                 }
                 // Use the time of execution as an indicator of failure
@@ -194,7 +193,7 @@ impl MetaSubscriber for WatchDog {
 
                 // if its reached its bottom limit, we can start analyzing what we have
                 if sample.pos + sample.neg >= sample.sample_size {
-                    let flags = check_sample(&sample, meta.ttl);
+                    let flags = check_sample(&sample);
                     if (flags.fishy_negative_rate || flags.fishy_positive_rate) 
                     && (flags.fishy_low_lifetime  || flags.fishy_high_lifetime) {
                         if !www_available().await {
@@ -214,7 +213,7 @@ impl MetaSubscriber for WatchDog {
             }
 
             NetworkState::TargetBlocking => {
-                *signal = SignalControl::Drop;
+                return Ok(SignalControl::Drop)
             }
 
             _ => {}
@@ -235,12 +234,12 @@ impl MetaSubscriber for WatchDog {
             self.sample_ctr += 1;
         }
         
-        Ok(())
+        Ok(*signal)
     }
 
 }
 
-fn check_sample(sample: &JobPoolSample, ttl: Duration) -> IndicatorFlags { 
+fn check_sample(sample: &JobPoolSample) -> IndicatorFlags { 
     IndicatorFlags {
         fishy_positive_rate: sample.fail_bounds.1 <= sample.percentage(),
         fishy_negative_rate: sample.percentage() <= sample.fail_bounds.0,

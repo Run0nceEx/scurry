@@ -17,15 +17,15 @@ use crate::error::Error;
 pub trait Subscriber<R, S>: std::fmt::Debug {
     async fn handle(&mut self, 
         meta: &mut CronMeta,
-        signal: &mut SignalControl,
+        signal: &SignalControl,
         data: &Option<R>,
         state: &mut S
-    ) -> Result<(), Error>;
+    ) -> Result<SignalControl, Error>;
 }
 
 #[async_trait::async_trait]
 pub trait MetaSubscriber: std::fmt::Debug {
-    async fn handle(&mut self, meta: &mut CronMeta, signal: &mut SignalControl) -> Result<(), Error>;
+    async fn handle(&mut self, meta: &mut CronMeta, signal: &SignalControl) -> Result<SignalControl, Error>;
 }
 
 
@@ -86,61 +86,66 @@ where
     }
 
 	pub fn insert(&mut self, job: S,  timeout: Duration, fire_in: Duration, max_retry: usize) {
+
         let meta = CronMeta::new(timeout, fire_in, J::name(), max_retry);
         self.schedule.insert(meta, job);
     }
 
+    async fn process_subscribers(&mut self, meta: &mut CronMeta, ctrl: SignalControl, state: &mut S, response: &Option<R>) -> SignalControl { 
+        let mut nctrl = ctrl;
 
-
-    async fn process_subscribers(&mut self, meta: &mut CronMeta, ctrl: &mut SignalControl, state: &mut S, response: &Option<R>) {
         for meta_hdlr in self.meta_subscribers.iter_mut() {
-            if let Err(e) = meta_hdlr.handle(meta, ctrl).await {
-                eprintln!("Error while handling meta data [{:?}] {}", meta_hdlr, e);    
+            match meta_hdlr.handle(meta, &nctrl).await {
+                Ok(sig) => nctrl = sig,
+                Err(e) => {
+                    eprintln!("Error while handling meta data [{:?}] {}", meta_hdlr, e);    
+                }
             }
         }
         
         for hdlr in self.subscribers.iter_mut() {
-            if let Err(e) = hdlr.handle(meta, ctrl, response, state).await {
-                eprintln!("Error while handling [{:?}] {}", hdlr, e);
+            match hdlr.handle(meta, &nctrl, response, state).await {
+                Ok(sig) => nctrl = sig,
+                Err(e) => {
+                    eprintln!("Error while handling meta data [{:?}] {}", hdlr, e);    
+                }
             }
         }
+
+        nctrl
     }
 
 
     /// syntacially this function is called `process_reschedules` but it does do more
     /// It processes all the data the comes across the channel including reschedule
-    pub async fn process_reschedules(&mut self, rescheduled_jobs: &mut Vec<(CronMeta, S)>) -> Option<(CronMeta, Option<R>, S)> {
+    pub async fn process_reschedules(&mut self) -> Option<(CronMeta, Option<R>, S)> {
         const RECV_TIMEOUT: f32 = 0.2;
 
-        if let Ok(Some((mut meta, mut ctrl, resp, mut state))) = timeout(Duration::from_secs_f32(RECV_TIMEOUT), self.channel.recv()).await {            
-            self.job_cnt -= 1;
-            self.process_subscribers(&mut meta, &mut ctrl, &mut state, &resp).await;
+        match timeout(Duration::from_secs_f32(RECV_TIMEOUT), self.channel.recv()).await {
+            Ok(Some((mut meta, mut ctrl, resp, mut state))) => {
+                ctrl = self.process_subscribers(&mut meta, ctrl, &mut state, &resp).await;
 
-            meta.ctr += 1;
-
-            match ctrl {
-                SignalControl::Reschedule(tts) => {
-                    if meta.ctr <= meta.max_ctr {
+                if meta.ctr > meta.max_ctr {
+                    ctrl = SignalControl::Drop; 
+                }
+                
+                self.job_cnt -= 1;
+                meta.ctr += 1;
+                
+                match ctrl {
+                    SignalControl::Reschedule(tts) => {
                         meta.tts = tts;
                         self.schedule.insert(meta, state);
-                    }
-                },
-                    
-                SignalControl::Retry => {
-                    if meta.ctr <= meta.max_ctr {
-                        self.schedule.insert(meta, state);
-                    }
-                },
+                    },
 
-                SignalControl::RetryNow => {
-                    if meta.ctr <= meta.max_ctr {
-                        rescheduled_jobs.push((meta, state))
-                    }
-                },
+                    SignalControl::Retry => self.schedule.insert(meta, state),
 
-                // lets not be a black box
-                SignalControl::Drop | SignalControl::Success(_) | SignalControl::Fuck => return Some((meta, resp, state))
+                    SignalControl::Drop | SignalControl::Success(_) => return Some((meta, resp, state))
+                }
+            
             }
+            Ok(None) => eprintln!("Channel is shutting down - i think"),
+            Err(e) => eprintln!("{}", e)
         }
         
         None
@@ -153,17 +158,27 @@ where
     }
 
     pub fn fire_jobs(&mut self, rescheduled_buf: &mut Vec<(CronMeta, S)>) {
-        self.job_cnt += 1;
         for (meta, state) in rescheduled_buf.drain(..) {
-            spawn_worker::<J, R, S>(self.schedule.tx.clone(), meta, state)
+            self.job_cnt += 1;
+            spawn_worker::<J, R, S>(self.schedule.tx.clone(), meta, state, FailOpt::Retry)
         }
     }
+}
+
+
+pub enum FailOpt {
+    // Uses reschedule
+    Reschedule(Duration),
+    
+    // Uses Retry
+    Retry,
 }
 
 fn spawn_worker<J, R, S>(
     mut vtx: mpsc::Sender<(CronMeta, SignalControl, Option<R>, S)>,
     mut meta: CronMeta,
-    mut state: S)
+    mut state: S, 
+    opt: FailOpt)
 where 
     J: CRON<Response=R, State=S>,
     R: Send + Sync + 'static,
@@ -177,20 +192,19 @@ where
             Ok(Ok((sig, resp))) => (sig, resp),
 
             Err(_) | Ok(Err(_)) => {
-                if meta.max_ctr >= meta.ctr {
-                    (SignalControl::Retry, None)
-                }
-                else {
-                    (SignalControl::Drop, None)
-                }
+                let sig = match opt {
+                        FailOpt::Reschedule(dur) => SignalControl::Reschedule(dur),
+                        FailOpt::Retry => SignalControl::Retry,
+                };
+                (sig, None)
             }
         };
-
         meta.durations.push(now.elapsed());
+        
         let id = meta.id;
 
         if let Err(e) = vtx.send((meta, sig, resp, state)).await {
-            eprintln!("channel error: {}", e)
+            panic!("{}", e);    
         }
 
         tracing::event!(target: "Schedule Thread", tracing::Level::INFO, "Completed job {}", id);

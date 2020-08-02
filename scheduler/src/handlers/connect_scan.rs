@@ -81,7 +81,7 @@ impl PrintSub {
 
 #[async_trait::async_trait]
 impl Subscriber<PortState, Job> for PrintSub {
-    async fn handle(&mut self, meta: &mut CronMeta, signal: &mut SignalControl, resp: &Option<PortState>, state: &mut Job) -> Result<(), Error> {
+    async fn handle(&mut self, meta: &mut CronMeta, signal: &SignalControl, resp: &Option<PortState>, state: &mut Job) -> Result<SignalControl, Error> {
         self.ctr += 1;
 
         let notify = [200, 1000, 10000, 50000, 100000, 150000, 200000];
@@ -89,7 +89,7 @@ impl Subscriber<PortState, Job> for PrintSub {
             println!("Reached {}", self.ctr);
         }
         
-        Ok(())
+        Ok(*signal)
     }
 }
 

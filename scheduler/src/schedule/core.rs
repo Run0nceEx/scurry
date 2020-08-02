@@ -26,7 +26,7 @@ pub trait CRON: std::fmt::Debug {
     fn name() -> String;
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum SignalControl {
     /// Drop memory, and give a boolean to tell if we connected 
     Success(bool), // Boolean to signify to the scheduler if we connected to the target or not
@@ -38,14 +38,8 @@ pub enum SignalControl {
     /// it will sleep again for whatever it's time to sleep paramenter was set to. (tts)
     Retry,
 
-    /// Operations failed and would like to attemp again, 
-    /// but does not sleep before execution
-    RetryNow,
-
     /// Operation was nullified either because of no result, or unreported error
     Drop,
-
-    Fuck,
 }
 
 pub struct Schedule<J, R, S>

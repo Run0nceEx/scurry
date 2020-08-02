@@ -89,7 +89,7 @@ async fn main() -> Result<(), Error> {
 	loop {
 		job_pool.release_ready(&mut job_buf).await?;
 		job_pool.fire_jobs(&mut job_buf);
-		job_pool.process_reschedules(&mut job_buf).await;
+		job_pool.process_reschedules().await;
 	}
 
 }

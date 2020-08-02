@@ -32,3 +32,9 @@ impl CronMeta {
         self.durations.iter().sum()
     }
 }
+
+impl PartialEq for CronMeta {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}

@@ -15,7 +15,7 @@ use crate::{
 
 use std::time::Duration;
 
-pub const JOB_CNT: usize = 100_000;
+pub const JOB_CNT: usize = 100;
 pub const POOLSIZE: usize = 16_384;
 
 pub mod noop {
@@ -23,37 +23,13 @@ pub mod noop {
 
     pub type Pool = CronPool<Worker<State, Response>, Response, State>;
 
-    pub type GenericPool<S, R> = CronPool<Worker<S, R>, R, S>;
+    pub type NoOpPool<S, R> = CronPool<Worker<S, R>, R, S>;
 
     #[derive(Debug, Default)]
     pub struct State;
 
     #[derive(Debug, Default)]
     pub struct Response;
-
-    #[derive(Debug, Default)]
-    pub struct ASubscriber;
-
-    #[async_trait::async_trait]
-    impl<R, S> Subscriber<R, S> for ASubscriber 
-    where 
-        S: Send + Sync,
-        R: Send + Sync
-    {
-        async fn handle(&mut self, meta: &mut CronMeta, signal: &mut SignalControl, data: &Option<R>, state: &mut S) -> Result<(), Error> {
-            Ok(())
-        }
-    }
-
-    #[derive(Debug, Default)]
-    pub struct AMetaSubscriber;
-
-    #[async_trait::async_trait]
-    impl MetaSubscriber for AMetaSubscriber {
-        async fn handle(&mut self, meta: &mut CronMeta, signal: &mut SignalControl) -> Result<(), Error> {
-            Ok(())
-        }
-    }
 
     #[derive(Debug)]
     pub struct Worker<S, R> {
@@ -91,17 +67,15 @@ pub mod noop {
         }
 
         fn name() -> String {
-            "noop_generic_worker".to_string()
+            "noopworker".to_string()
         }
     }
 
     pub fn get_pool(timeout: f32, fire_in: f32, max_retries: usize) -> Pool {
         let mut pool: Pool = Pool::new(POOLSIZE);
-        pool.subscribe(ASubscriber);
-        pool.subscribe_meta_handler(AMetaSubscriber);
 
         for x in 0..JOB_CNT {
-            pool.insert(State, Duration::from_secs_f32(timeout), Duration::from_secs_f32(timeout), max_retries);
+            pool.insert(State, Duration::from_secs_f32(timeout), Duration::from_secs_f32(fire_in), max_retries);
         }
 
         pool
@@ -114,37 +88,17 @@ pub mod counter {
     
     pub type Pool = CronPool<Worker, Response, State>;
 
-    #[derive(Debug, Clone)]
+    #[derive(Debug, Clone, PartialEq, Eq)]
     pub struct State(usize);
 
-    #[derive(Debug, Default)]
+    impl State {
+        pub fn count(&self) -> usize {
+            self.0
+        }
+    }
+
+    #[derive(Debug, Default, PartialEq, Eq)]
     pub struct Response(usize);
-
-    #[derive(Debug, Clone)]
-    pub struct ASubscriber(usize);
-
-    #[async_trait::async_trait]
-    impl<R, S> Subscriber<R, S> for ASubscriber 
-    where 
-        S: Send + Sync,
-        R: Send + Sync
-    {
-        async fn handle(&mut self, meta: &mut CronMeta, signal: &mut SignalControl, data: &Option<R>, state: &mut S) -> Result<(), Error> {
-            self.0 += 1;
-            Ok(())
-        }
-    }
-
-    #[derive(Debug, Default)]
-    pub struct AMetaSubscriber(usize);
-
-    #[async_trait::async_trait]
-    impl MetaSubscriber for AMetaSubscriber {
-        async fn handle(&mut self, meta: &mut CronMeta, signal: &mut SignalControl) -> Result<(), Error> {
-            self.0 += 1;
-            Ok(())
-        }
-    }
 
     #[derive(Debug, Default)]
     pub struct Worker;
@@ -169,90 +123,11 @@ pub mod counter {
 
     pub fn get_pool(timeout: f32, fire_in: f32, max_retries: usize) -> Pool {
         let mut pool: Pool = Pool::new(POOLSIZE);
-        
-        pool.subscribe(ASubscriber(0));
-        pool.subscribe_meta_handler(AMetaSubscriber(0));
 
-        for x in 0..JOB_CNT {
-            pool.insert(State(0), Duration::from_secs_f32(timeout), Duration::from_secs_f32(timeout), max_retries);
+        for _ in 0..JOB_CNT {
+            pool.insert(State(0), Duration::from_secs_f32(timeout), Duration::from_secs_f32(fire_in), max_retries);
         }
 
         pool
     }
 }
-
-
-pub mod sleep {
-    use super::*;
-    
-    pub type Pool = CronPool<Worker, Response, State>;
-
-    #[derive(Debug, Clone)]
-    pub struct State(usize);
-
-    #[derive(Debug, Default)]
-    pub struct Response(usize);
-
-    #[derive(Debug, Default)]
-    pub struct Worker;
-
-    #[async_trait::async_trait]
-    impl CRON for Worker {
-        type State = State;
-        type Response = Response;
-
-        /// Run function, and then append to parent if more jobs are needed
-        async fn exec(state: &mut Self::State) -> Result<(SignalControl, Option<Self::Response>), Error> {            
-            let resp = Ok((SignalControl::Success(false), Some(Response(state.0))));
-            state.0 += 1;
-            resp
-        }
-
-        fn name() -> String {
-            format!("{:?}", Worker)
-        }
-    }
-
-    #[derive(Debug, Clone)]
-    pub struct ASubscriber(usize);
-
-    #[async_trait::async_trait]
-    impl<R, S> Subscriber<R, S> for ASubscriber 
-    where 
-        S: Send + Sync,
-        R: Send + Sync
-    {
-        async fn handle(&mut self, meta: &mut CronMeta, signal: &mut SignalControl, data: &Option<R>, state: &mut S) -> Result<(), Error> {
-            tokio::time::delay_for(Duration::from_secs_f32(5.0)).await;
-            Ok(())
-        }
-    }
-
-
-    #[derive(Debug, Default)]
-    pub struct AMetaSubscriber(usize);
-
-    #[async_trait::async_trait]
-    impl MetaSubscriber for AMetaSubscriber {
-        async fn handle(&mut self, meta: &mut CronMeta, signal: &mut SignalControl) -> Result<(), Error> {
-            self.0 += 1;
-            Ok(())
-        }
-    }
-
-    
-
-    pub fn get_pool(timeout: f32, fire_in: f32, max_retries: usize) -> Pool {
-        let mut pool: Pool = Pool::new(POOLSIZE);
-        
-        pool.subscribe(ASubscriber(0));
-        pool.subscribe_meta_handler(AMetaSubscriber(0));
-
-        for x in 0..JOB_CNT {
-            pool.insert(State(0), Duration::from_secs_f32(timeout), Duration::from_secs_f32(timeout), max_retries);
-        }
-
-        pool
-    }
-}
-
