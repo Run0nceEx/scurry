@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 use super::meta::CronMeta;
 
 use crate::error::Error;

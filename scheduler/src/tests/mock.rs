@@ -24,10 +24,10 @@ pub mod noop {
     pub type Pool = NoOpPool<State, Response>;
 
 
-    #[derive(Debug, Default)]
+    #[derive(Debug, Default, Clone)]
     pub struct State;
 
-    #[derive(Debug, Default)]
+    #[derive(Debug, Default, Clone)]
     pub struct Response;
 
     #[derive(Debug)]
