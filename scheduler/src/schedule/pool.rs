@@ -75,9 +75,6 @@ impl<T> OperationCache for EVec<T> where T: Clone {
 }
 
 
-
-
-
 pub struct Schedule<J, R, S>
 where 
     J: CRON<Response=R, State=S>,
@@ -86,7 +83,7 @@ where
 {
     pub tx: Arc<Mutex<evc::WriteHandle<EVec<(CronMeta, SignalControl, Option<R>, S)>>>>,
     timer: DelayQueue<uuid::Uuid>,                 // timer for jobs
-    bank: HashMap<uuid::Uuid, (CronMeta, S)>,      // collection of pending jobs
+    pub bank: HashMap<uuid::Uuid, (CronMeta, S)>,      // collection of pending jobs
 
     _job: std::marker::PhantomData<J>
 }
@@ -109,7 +106,6 @@ where
     pub fn new(channel_size: usize) -> (Self, evc::ReadHandle<EVec<(CronMeta, SignalControl, Option<R>, S)>>) {
         //let (tx, rx) = mpsc::channel(channel_size);
         let (tx, rx) = evc::new(EVec::with_compacity(channel_size));
-
 
         let schedule = Self {
             tx: Arc::new(Mutex::new(tx)),
@@ -141,12 +137,11 @@ where
 	R: Send + Sync + Clone,
 	S: Send + Sync + Clone,
 {
-	schedule: Schedule<J, R, S>,
+	pub schedule: Schedule<J, R, S>,
    
     channel: evc::ReadHandle<EVec<(CronMeta, SignalControl, Option<R>, S)>>,
     subscribers: SmallVec<[Box<dyn Subscriber<R, S>>; 8]>,
     meta_subscribers: SmallVec<[Box<dyn MetaSubscriber>; 8]>,
-    job_cnt: usize
 }
 
 
@@ -164,10 +159,11 @@ where
             channel: rx,
             subscribers: SmallVec::new(),
             meta_subscribers: SmallVec::new(),
-            job_cnt: 0
+
 		}
     }
 
+    #[inline]
 	pub fn subscribe<T>(&mut self, sub: T)
 	where 
 		T: Subscriber<R, S> + 'static
@@ -175,6 +171,7 @@ where
 		self.subscribers.push(Box::new(sub));
     }
     
+    #[inline]
     pub fn subscribe_meta_handler<T>(&mut self, sub: T)
 	where 
 		T: MetaSubscriber + 'static
@@ -182,6 +179,7 @@ where
         self.meta_subscribers.push(Box::new(sub));
 	}
 
+    #[inline]
 	pub fn insert(&mut self, job: S,  timeout: Duration, fire_in: Duration, max_retry: usize) {
 
         let meta = CronMeta::new(timeout, fire_in, J::name(), max_retry);
@@ -212,47 +210,46 @@ where
         nctrl
     }
 
+    #[inline]
+    pub fn flush(&mut self) {
+        let mut lock = self.schedule.tx.lock().unwrap();
+        lock.write(Operation::Clear);
+        lock.refresh();
+    }
 
     /// syntacially this function is called `process_reschedules` but it does do more
     /// It processes all the data the comes across the channel including reschedule
     pub async fn process_reschedules(&mut self, results: &mut Vec<(CronMeta, Option<R>, S)>) {
-        //const RECV_TIMEOUT: f32 = 0.0025;
-        
-        {
-            let mut lock = self.schedule.tx.lock().unwrap();
-            lock.refresh();
-        }
+        { self.flush(); }
 
-        let mut preprocess_buf = self.channel.read().0.clone();
+        let preprocess_buf = self.channel.read().0.clone();
 
         for (mut meta, mut ctrl, resp, mut state) in preprocess_buf {
-                ctrl = self.process_subscribers(&mut meta, ctrl, &mut state, &resp).await;
+            ctrl = self.process_subscribers(&mut meta, ctrl, &mut state, &resp).await;
 
-                if meta.ctr > meta.max_ctr {
-                    ctrl = SignalControl::Drop; 
-                }
-                
-                meta.ctr += 1;
-                
-                match ctrl {
-                    SignalControl::Reschedule(tts) => {
-                        meta.tts = tts;
-                        self.schedule.insert(meta, state);
-                    },
-
-                    SignalControl::Retry => self.schedule.insert(meta, state),
-                    SignalControl::Drop | SignalControl::Success(_) => results.push((meta, resp.clone(), state))
-                }
+            if meta.ctr > meta.max_ctr {
+                tracing::event!(target: "Schedule Thread", tracing::Level::INFO, "Killing Job {}", meta.id);
+                ctrl = SignalControl::Drop; 
+            }
+            meta.ctr += 1;
+            
+            match ctrl {
+                SignalControl::Reschedule(tts) => {
+                    meta.tts = tts;
+                    self.schedule.insert(meta, state);
+                },
+                SignalControl::Retry => self.schedule.insert(meta, state),
+                SignalControl::Drop | SignalControl::Success(_) => results.push((meta, resp.clone(), state))
+            }
         }
-
     }
 
-    /// Fires jobs that are ready
+    /// Get jobs that are ready
     pub async fn release_ready(&mut self, rescheduled_buf: &mut Vec<(CronMeta, S)>) -> Result<(), Error> {
         self.schedule.release_ready(rescheduled_buf).await?;
         Ok(())
     }
-
+    
     pub fn fire_jobs(&mut self, rescheduled_buf: &mut Vec<(CronMeta, S)>) {
         for (meta, state) in rescheduled_buf.drain(..) {
             spawn_worker::<J, R, S>(self.schedule.tx.clone(), meta, state)
@@ -265,21 +262,22 @@ fn spawn_worker<J, R, S>(
     mut vtx: Arc<Mutex<evc::WriteHandle<EVec<(CronMeta, SignalControl, Option<R>, S)>>>>,
     mut meta: CronMeta,
     mut state: S, 
-    )
+)
 where 
     J: CRON<Response=R, State=S>,
     R: Send + Sync + 'static + Clone,
     S: Send + Sync + 'static + Clone
 {
     tokio::spawn(async move {
-        tracing::event!(target: "Schedule Thread", tracing::Level::INFO, "Firing job {}", meta.id);
+        tracing::event!(target: "Schedule Thread", tracing::Level::TRACE, "Firing job {}", meta.id);
         let now = Instant::now();
 
         let (sig, resp) = match timeout(meta.ttl, J::exec(&mut state)).await {
             Ok(Ok((sig, resp))) => (sig, resp),
 
             Err(_) | Ok(Err(_)) => {
-                (SignalControl::Drop, None)
+                tracing::event!(target: "Schedule Thread", tracing::Level::INFO, "job timed-out {}", meta.id);
+                (SignalControl::Retry, None)
             }
         };
         meta.durations.push(now.elapsed());
@@ -289,6 +287,6 @@ where
         let mut lock = vtx.lock().unwrap();
         lock.write(Operation::Push((meta, sig ,resp, state)));
 
-        tracing::event!(target: "Schedule Thread", tracing::Level::INFO, "Completed job {}", id);
+        tracing::event!(target: "Schedule Thread", tracing::Level::TRACE, "Completed job {}", id);
     });
 }

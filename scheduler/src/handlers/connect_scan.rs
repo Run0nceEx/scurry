@@ -8,7 +8,7 @@ use crate::{
 };
 
 use tokio::net::TcpStream;
-use std::net::SocketAddr;
+use std::{net::SocketAddr, time::{Duration, Instant}};
 
 #[derive(Debug, Clone)]
 pub struct Job {
@@ -68,12 +68,14 @@ async fn scan(addr: SocketAddr) -> Result<(), crate::error::Error> {
 }
 
 pub struct PrintSub {
+    ts: Instant,
     ctr: u64,
 }
 
 impl PrintSub {
     pub fn new() -> Self {
         Self {
+            ts: Instant::now(),
             ctr: 0
         }
     }
@@ -83,11 +85,12 @@ impl PrintSub {
 impl Subscriber<PortState, Job> for PrintSub {
     async fn handle(&mut self, meta: &mut CronMeta, signal: &SignalControl, resp: &Option<PortState>, state: &mut Job) -> Result<SignalControl, Error> {
         self.ctr += 1;
-
-        let notify = [200, 1000, 10000, 50000, 100000, 150000, 200000];
-        if notify.contains(&self.ctr) {
-            println!("Reached {}", self.ctr);
+        if self.ts.elapsed() >= Duration::from_secs(60) {
+            tracing::event!(target: "Schedule Thread", tracing::Level::INFO, "Rate sample: [{}/min | {}/sec | {}/ms]", self.ctr, self.ctr/60, (self.ctr/60)/60);
+            self.ts = Instant::now();
+            self.ctr = 0;
         }
+        
         
         Ok(*signal)
     }

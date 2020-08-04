@@ -1,5 +1,9 @@
 mod core;
 
+#[feature(test)]
+#[cfg(test)]
+mod test;
+
 pub mod meta;
 pub mod pool;
 

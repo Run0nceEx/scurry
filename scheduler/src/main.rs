@@ -18,12 +18,7 @@ use error::Error;
 
 mod database;
 
-#[cfg(test)]
-#[feature(test)]
-mod tests;
-
-
-use tokio::io::{BufReader};
+use tokio::io::BufReader;
 use tokio::prelude::*;
 
 use tracing::{info, Level};
@@ -65,8 +60,8 @@ async fn main() -> Result<(), Error> {
 				Ok(addr) =>  {
 					job_pool.insert(
 						Job::new(addr, 1),
-						std::time::Duration::from_secs(2),
-						std::time::Duration::from_millis(1),
+						std::time::Duration::from_secs(60),
+						std::time::Duration::from_millis(0),
 						2
 					);
 				},
@@ -88,10 +83,14 @@ async fn main() -> Result<(), Error> {
 
 	loop {
 		job_pool.release_ready(&mut job_buf).await?;
-		job_pool.fire_jobs(&mut job_buf);
+
+		if job_buf.len() > 0 {
+			tracing::event!(target: "Schedule Thread", tracing::Level::INFO, "Adding [{}] jobs", job_buf.len());
+			job_pool.fire_jobs(&mut job_buf);
+		}
+		
 		job_pool.process_reschedules(&mut rbuf).await;
 
 		rbuf.clear()
 	}
-
 }
