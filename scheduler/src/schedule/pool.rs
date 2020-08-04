@@ -232,7 +232,6 @@ where
                     ctrl = SignalControl::Drop; 
                 }
                 
-                eprintln!("{:?}", meta.ctr);
                 meta.ctr += 1;
                 
                 match ctrl {

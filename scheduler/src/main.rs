@@ -6,7 +6,6 @@
 mod schedule;
 use schedule::pool::CronPool;
 
-
 mod handlers;
 use handlers::{
 	connect_scan::{OpenPortJob, Job, PortState, PrintSub},
@@ -91,6 +90,8 @@ async fn main() -> Result<(), Error> {
 		job_pool.release_ready(&mut job_buf).await?;
 		job_pool.fire_jobs(&mut job_buf);
 		job_pool.process_reschedules(&mut rbuf).await;
+
+		rbuf.clear()
 	}
 
 }
