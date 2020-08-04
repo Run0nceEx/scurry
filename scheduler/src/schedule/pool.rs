@@ -255,25 +255,17 @@ where
 
     pub fn fire_jobs(&mut self, rescheduled_buf: &mut Vec<(CronMeta, S)>) {
         for (meta, state) in rescheduled_buf.drain(..) {
-            spawn_worker::<J, R, S>(self.schedule.tx.clone(), meta, state, FailOpt::Retry)
+            spawn_worker::<J, R, S>(self.schedule.tx.clone(), meta, state)
         }
     }
 }
 
 
-pub enum FailOpt {
-    // Uses reschedule
-    Reschedule(Duration),
-    
-    // Uses Retry
-    Retry,
-}
-
 fn spawn_worker<J, R, S>(
     mut vtx: Arc<Mutex<evc::WriteHandle<EVec<(CronMeta, SignalControl, Option<R>, S)>>>>,
     mut meta: CronMeta,
     mut state: S, 
-    opt: FailOpt)
+    )
 where 
     J: CRON<Response=R, State=S>,
     R: Send + Sync + 'static + Clone,
@@ -287,11 +279,7 @@ where
             Ok(Ok((sig, resp))) => (sig, resp),
 
             Err(_) | Ok(Err(_)) => {
-                let sig = match opt {
-                        FailOpt::Reschedule(dur) => SignalControl::Reschedule(dur),
-                        FailOpt::Retry => SignalControl::Retry,
-                };
-                (sig, None)
+                (SignalControl::Drop, None)
             }
         };
         meta.durations.push(now.elapsed());

@@ -183,12 +183,12 @@ fn all_timeout() {
         let mut rbuf = Vec::new();
         pool.process_reschedules(&mut rbuf).await;
         
-        //TODO
-        for (meta, _response, _state) in rbuf {
-                assert!(meta.ctr > meta.max_ctr);
-                assert!(meta.durations.get(0).unwrap() > &live_for);
-        }
+        assert_eq!(rbuf.len(), JOB_CNT);
 
+        for (meta, _response, _state) in rbuf {
+            assert!(meta.ctr >= meta.max_ctr);
+            assert!(meta.durations.get(0).unwrap() > &live_for);
+        }
     });
 }
 
