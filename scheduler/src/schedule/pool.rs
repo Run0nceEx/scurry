@@ -81,10 +81,6 @@ where
         self.meta_subscribers.push(Box::new(sub));
 	}
 
-    pub fn get_subscribers(&self) -> &[Box<dyn Subscriber<R, S>>] {
-        &self.subscribers[..]
-    }
-
 	pub fn insert(&mut self, job: S,  timeout: Duration, fire_in: Duration, max_retry: usize) {
 
         let meta = CronMeta::new(timeout, fire_in, J::name(), max_retry);
@@ -119,7 +115,7 @@ where
     /// syntacially this function is called `process_reschedules` but it does do more
     /// It processes all the data the comes across the channel including reschedule
     pub async fn process_reschedules(&mut self) -> Option<(CronMeta, Option<R>, S)> {
-        const RECV_TIMEOUT: f32 = 0.2;
+        const RECV_TIMEOUT: f32 = 0.0025;
 
         match timeout(Duration::from_secs_f32(RECV_TIMEOUT), self.channel.recv()).await {
             Ok(Some((mut meta, mut ctrl, resp, mut state))) => {

@@ -1,5 +1,5 @@
 use crate::{
-    schedule::{CRON, MetaSubscriber, CronPool, Subscriber, meta::CronMeta, SignalControl},
+    schedule::{CRON, MetaSubscriber, CronPool, meta::CronMeta, SignalControl},
     error::Error
 };
 
@@ -81,7 +81,7 @@ fn all_retry_now_once() {
 
     #[async_trait::async_trait]
     impl MetaSubscriber for RetryOnce {
-        async fn handle(&mut self, meta: &mut CronMeta, signal: &SignalControl) -> Result<SignalControl, Error>
+        async fn handle(&mut self, meta: &mut CronMeta, _signal: &SignalControl) -> Result<SignalControl, Error>
         {
             match meta.ctr {
                 0 | 1 => return Ok(SignalControl::Reschedule(std::time::Duration::from_secs(0))), // set up retry
@@ -115,7 +115,7 @@ fn all_retry_now_once() {
         // capture all the results
         let mut ctr = 0;
         for _ in 0..JOB_CNT {
-            if let Some((meta, resp, state)) = pool.process_reschedules().await {
+            if let Some((meta, _resp, _state)) = pool.process_reschedules().await {
                 ctr += 1;
                 assert!(meta.ctr > 1);
             }
@@ -142,7 +142,7 @@ fn all_retry_now_once() {
 
         // capture all the results
         for _ in 0..JOB_CNT {
-            if let Some((meta, resp, state)) = pool.process_reschedules().await {
+            if let Some((meta, _resp, _state)) = pool.process_reschedules().await {
                 assert!(meta.ctr > 1);
             }
         }
@@ -169,7 +169,7 @@ fn all_timeout() {
         type State = mock::State;
         type Response = mock::Response;
 
-        async fn exec(state: &mut Self::State) -> Result<(SignalControl, Option<Self::Response>), Error> {            
+        async fn exec(_state: &mut Self::State) -> Result<(SignalControl, Option<Self::Response>), Error> {            
             tokio::time::delay_for(Duration::from_secs(3)).await;
             Ok((SignalControl::Success(false), Some(mock::Response)))
         }
@@ -198,7 +198,7 @@ fn all_timeout() {
         tokio::time::delay_for(Duration::from_secs(5)).await;
 
         for _ in 0..JOB_CNT {
-            if let Some((meta, response, state)) = pool.process_reschedules().await {
+            if let Some((meta, _response, _state)) = pool.process_reschedules().await {
                 assert!(meta.ctr > meta.max_ctr);
                 assert!(meta.durations.get(0).unwrap() > &live_for);
             }
