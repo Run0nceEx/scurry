@@ -3,14 +3,13 @@ Mocked up pools for testing and benching.
 
 Most of this stuff is repetative fluff
 */
-use super::benchmarks::rewrite_schedule::{
+use crate::schedule::{
     CronPool,
 };
 
-
 use crate::schedule::{
-SignalControl,
-CRON
+    SignalControl,
+    CRON
 };
 use crate::error::Error;
 

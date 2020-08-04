@@ -9,7 +9,7 @@ use tokio::runtime::Runtime;
 
 #[bench]
 fn single_in_single_out(b: &mut Bencher) {
-    use super::rewrite_schedule::CronPool;
+    use crate::schedule::CronPool;
     use crate::tests::mock::noop;
 
     type Pool = CronPool<noop::Worker<noop::State, noop::Response>, noop::Response, noop::State>;
