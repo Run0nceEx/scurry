@@ -13,6 +13,24 @@ use std::{
     time::Duration
 };
 
+
+#[async_trait::async_trait]
+pub trait Subscriber<R, S>: std::fmt::Debug {
+    async fn handle(&mut self, 
+        meta: &mut CronMeta,
+        signal: &SignalControl,
+        data: &Option<R>,
+        state: &mut S
+    ) -> Result<SignalControl, Error>;
+}
+
+#[async_trait::async_trait]
+pub trait MetaSubscriber: std::fmt::Debug {
+    async fn handle(&mut self, meta: &mut CronMeta, signal: &SignalControl) -> Result<SignalControl, Error>;
+}
+
+
+
 /// Used in scheduler (Command run on)
 #[async_trait::async_trait]
 pub trait CRON: std::fmt::Debug {

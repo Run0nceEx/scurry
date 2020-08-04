@@ -23,16 +23,20 @@ fn single_in_single_out() {
             3
         );
         
+        assert_eq!(buf.len(), 0);
         pool.release_ready(&mut buf).await.unwrap();
-        pool.fire_jobs(&mut buf);
-        assert_eq!(pool.job_count(), 1);
+        assert_eq!(buf.len(), 1);
 
-        let x = pool.process_reschedules().await;
         
-        match  x {
-            Some(_) => assert_eq!(1, 1),
-            None => assert_eq!(1, 0),
-        }
+        pool.fire_jobs(&mut buf);
+        
+        tokio::time::delay_for(std::time::Duration::from_secs(5)).await;
+
+        let mut rbuf = Vec::new();
+        let x = pool.process_reschedules(&mut rbuf).await;
+        
+        assert_eq!(rbuf.len(), 1);
+
     });
 }
 
@@ -49,29 +53,21 @@ fn all_in_all_out() {
         pool.release_ready(&mut buf).await.unwrap();
 
         assert_eq!(buf.len(), JOB_CNT);
-        assert_eq!(pool.job_count(), 0);
-
 
         pool.fire_jobs(&mut buf);
         
-        assert_eq!(pool.job_count(), JOB_CNT);
+        let mut rbuf = Vec::new();
+
+        tokio::time::delay_for(std::time::Duration::from_secs(5)).await;
+        pool.process_reschedules(&mut rbuf).await;
         
-        let mut ctr = 0;
-        for _ in 0..JOB_CNT {
-            if let Some(_) = pool.process_reschedules().await {
-                ctr += 1;
-            }
-        }
-
-
-        assert_eq!(pool.job_count(), 0);
-        assert_eq!(ctr, JOB_CNT);
+        assert_eq!(JOB_CNT, rbuf.len());
     });
 }
 
 
 
-// Run all once, retry, run again, succeed, all in; all out
+//Run all once, retry, run again, succeed, all in; all out
 #[test]
 fn all_retry_now_once() {
     use super::mock::noop as mock;
@@ -84,7 +80,7 @@ fn all_retry_now_once() {
         async fn handle(&mut self, meta: &mut CronMeta, _signal: &SignalControl) -> Result<SignalControl, Error>
         {
             match meta.ctr {
-                0 | 1 => return Ok(SignalControl::Reschedule(std::time::Duration::from_secs(0))), // set up retry
+                0 => return Ok(SignalControl::Reschedule(std::time::Duration::from_secs(0))), // set up retry
                 _ => return Ok(SignalControl::Success(false)), // auto pass
             }
             
@@ -103,52 +99,39 @@ fn all_retry_now_once() {
         pool.release_ready(&mut buf).await.unwrap();
         
         assert_eq!(buf.len(), JOB_CNT);
-        assert_eq!(pool.job_count(), 0);
+
 
         // Fire and retrieve once
         pool.fire_jobs(&mut buf);
-        assert_eq!(pool.job_count(), JOB_CNT);
+        
         assert_eq!(buf.len(), 0);
 
-        tokio::time::delay_for(std::time::Duration::from_secs(2)).await;
+        tokio::time::delay_for(std::time::Duration::from_secs(10)).await;
 
         // capture all the results
-        let mut ctr = 0;
-        for _ in 0..JOB_CNT {
-            if let Some((meta, _resp, _state)) = pool.process_reschedules().await {
-                ctr += 1;
-                assert!(meta.ctr > 1);
-            }
-        }
+        let mut rbuf = Vec::new();
+        pool.process_reschedules(&mut rbuf).await;
 
-        assert_eq!(ctr, 0);
-        assert_eq!(pool.job_count(), 0);
-        assert_eq!(buf.len(), 0);
-
+        assert_eq!(rbuf.len(), 0);
 
         // SECOND ITER
-
-        pool.release_ready(&mut buf).await.unwrap();
+        pool.release_ready(&mut buf).await.unwrap(); // reschedule delayed
         
-        assert_eq!(buf.len(), JOB_CNT);
-        assert_eq!(pool.job_count(), 0);
+        assert_eq!(buf.len(), JOB_CNT); // check we got all back
 
         // Fire and retrieve once
         pool.fire_jobs(&mut buf);
-        assert_eq!(pool.job_count(), JOB_CNT);
+
         assert_eq!(buf.len(), 0);
 
         tokio::time::delay_for(std::time::Duration::from_secs(2)).await;
 
-        // capture all the results
-        for _ in 0..JOB_CNT {
-            if let Some((meta, _resp, _state)) = pool.process_reschedules().await {
-                assert!(meta.ctr > 1);
-            }
-        }
+        pool.process_reschedules(&mut rbuf).await;
 
-        assert_eq!(pool.job_count(), 0);
         assert_eq!(buf.len(), 0);
+
+
+        assert_eq!(rbuf.len(), JOB_CNT);
 
     });
 }
@@ -197,12 +180,15 @@ fn all_timeout() {
 
         tokio::time::delay_for(Duration::from_secs(5)).await;
 
-        for _ in 0..JOB_CNT {
-            if let Some((meta, _response, _state)) = pool.process_reschedules().await {
+        let mut rbuf = Vec::new();
+        pool.process_reschedules(&mut rbuf).await;
+        
+        //TODO
+        for (meta, _response, _state) in rbuf {
                 assert!(meta.ctr > meta.max_ctr);
                 assert!(meta.durations.get(0).unwrap() > &live_for);
-            }
         }
+
     });
 }
 
@@ -219,7 +205,8 @@ fn pass_blocking_recv() {
     rt.block_on(async move {
         let mut pool = noop::Pool::new(POOLSIZE);
 
-        match tokio::time::timeout(std::time::Duration::from_secs(10), pool.process_reschedules()).await {
+        let mut rbuf = Vec::new();
+        match tokio::time::timeout(std::time::Duration::from_secs(10), pool.process_reschedules(&mut rbuf)).await {
             Ok(_) => assert_eq!(0, 0),
             Err(_) => assert_eq!(1, 0)
         }

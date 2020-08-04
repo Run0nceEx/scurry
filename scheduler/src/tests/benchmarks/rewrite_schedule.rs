@@ -22,9 +22,44 @@ use std::{
     collections::HashMap,
 };
 
-use super::evec::{EVec, Operation};
-
 use std::sync::{Arc, Mutex};
+
+
+
+use evc::OperationCache;
+
+#[derive(Clone, Debug, Default)]
+pub struct EVec<T>(pub Vec<T>);
+
+
+impl<T> EVec<T> {
+    pub fn with_compacity(size: usize) -> Self {
+        Self(Vec::with_capacity(size))
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum Operation<T> {
+    Push(T),
+    Remove(usize),
+    Clear,
+}
+
+impl<T> OperationCache for EVec<T> where T: Clone {
+    type Operation = Operation<T>;
+
+    fn apply_operation(&mut self, operation: Self::Operation) {
+        match operation {
+            Operation::Push(value) => self.0.push(value),
+            Operation::Remove(index) => { self.0.remove(index); },
+            Operation::Clear => self.0.clear(),
+        }
+    }
+}
+
+
+
+
 
 pub struct Schedule<J, R, S>
 where 

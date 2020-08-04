@@ -85,11 +85,12 @@ async fn main() -> Result<(), Error> {
 	}
 
 	let mut job_buf = Vec::new();
-	
+	let mut rbuf = Vec::new();
+
 	loop {
 		job_pool.release_ready(&mut job_buf).await?;
 		job_pool.fire_jobs(&mut job_buf);
-		job_pool.process_reschedules().await;
+		job_pool.process_reschedules(&mut rbuf).await;
 	}
 
 }
