@@ -138,7 +138,6 @@ where
 	S: Send + Sync + Clone,
 {
 	pub schedule: Schedule<J, R, S>,
-   
     channel: evc::ReadHandle<EVec<(CronMeta, SignalControl, Option<R>, S)>>,
     subscribers: SmallVec<[Box<dyn Subscriber<R, S>>; 8]>,
     meta_subscribers: SmallVec<[Box<dyn MetaSubscriber>; 8]>,
@@ -220,7 +219,7 @@ where
     /// syntacially this function is called `process_reschedules` but it does do more
     /// It processes all the data the comes across the channel including reschedule
     pub async fn process_reschedules(&mut self, results: &mut Vec<(CronMeta, Option<R>, S)>) {
-        { self.flush(); }
+        self.flush();
 
         let preprocess_buf = self.channel.read().0.clone();
 

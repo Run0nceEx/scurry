@@ -1,5 +1,5 @@
 
-
+use std::cmp::Ordering;
 use crate::error::Error;
 use std::time::Duration;
 
@@ -33,3 +33,29 @@ pub enum SignalControl {
 }
 
 
+impl Ord for SignalControl {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match other {
+            other if other == self => Ordering::Equal,
+            SignalControl::Reschedule(_) | SignalControl::Retry => {
+                match self {
+                    SignalControl::Drop | SignalControl::Success(_) => Ordering::Greater,
+                    SignalControl::Retry | SignalControl::Reschedule(_) => Ordering::Equal,
+                }
+            }
+            
+            SignalControl::Drop | SignalControl::Success(_) => {
+                match self {
+                    SignalControl::Drop | SignalControl::Success(_) => Ordering::Equal,
+                    SignalControl::Retry | SignalControl::Reschedule(_) => Ordering::Less,
+                }
+            }
+        }
+    }
+}
+
+impl PartialOrd for SignalControl {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        unimplemented!()
+    }
+}
