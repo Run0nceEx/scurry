@@ -32,3 +32,4 @@ tracing = "0.1"
 tracing-subscriber = "0.2"
 smallvec = "1.4"
 pnet = "0.26.0"
+rand = "*" # for test

@@ -25,11 +25,13 @@ use tracing::{info, Level};
 use tracing_subscriber::FmtSubscriber;
 
 
+mod pnet_futures;
+
 fn setup_subscribers() {
 	let subscriber = FmtSubscriber::builder()
 		// all spans/events with a level higher than TRACE (e.g, debug, info, warn, etc.)
 		// will be written to stdout.
-		.with_max_level(Level::TRACE)
+		.with_max_level(Level::DEBUG)
 		// completes the builder.
 		.finish();
 	
@@ -45,10 +47,10 @@ async fn main() -> Result<(), Error> {
 	
 	let mut job_pool: CronPool<OpenPortJob, PortState, Job> = CronPool::new(16*1024);
 	job_pool.subscribe(PrintSub::new());
-	job_pool.subscribe_meta_handler(WatchDog::new().await);
+	//job_pool.subscribe_meta_handler(WatchDog::new().await);
 
 
-	let file = tokio::fs::File::open("/tmp/list").await?;
+	let file = tokio::fs::File::open("/home/ghost/projects/px-engine/proxbox-rs/scheduler/test.lst").await?;
 	let mut reader = BufReader::new(file);
 	let mut buf = String::new();
 	
@@ -81,6 +83,9 @@ async fn main() -> Result<(), Error> {
 	let mut job_buf = Vec::new();
 	let mut rbuf = Vec::new();
 
+	let mut ticker = std::time::Instant::now();
+
+
 	loop {
 		job_pool.release_ready(&mut job_buf).await?;
 
@@ -91,6 +96,13 @@ async fn main() -> Result<(), Error> {
 		
 		job_pool.process_reschedules(&mut rbuf).await;
 
-		rbuf.clear()
+		if ticker.elapsed() >= std::time::Duration::from_secs(5) {
+			tracing::event!(target: "Schedule Thread", tracing::Level::DEBUG, "Job count is [{}] jobs", job_pool.job_count());
+			ticker = std::time::Instant::now();
+		}
+
+		rbuf.clear();
+		job_buf.clear();
+		//tokio::time::delay_for(tokio::time::Duration::from_secs_f64(0.00001)).await;
 	}
 }

@@ -26,8 +26,6 @@ use std::sync::{Arc, Mutex};
 
 use evc::OperationCache;
 
-
-
 #[async_trait::async_trait]
 pub trait Subscriber<R, S>: std::fmt::Debug {
     async fn handle(&mut self, 
@@ -100,8 +98,13 @@ where
         // `self.timer`
         let _key = self.timer.insert(meta.id, meta.tts);
         self.bank.insert(meta.id, (meta, state));
+        
     }
     
+    pub fn job_count(&self) -> usize {
+        std::sync::Arc::strong_count(&self.tx)
+    }
+
     #[inline]
     pub fn new(channel_size: usize) -> (Self, evc::ReadHandle<EVec<(CronMeta, SignalControl, Option<R>, S)>>) {
         //let (tx, rx) = mpsc::channel(channel_size);
@@ -163,6 +166,11 @@ where
     }
 
     #[inline]
+    pub fn job_count(&self) -> usize {
+        self.schedule.job_count()
+    }
+
+    #[inline]
 	pub fn subscribe<T>(&mut self, sub: T)
 	where 
 		T: Subscriber<R, S> + 'static
@@ -180,7 +188,6 @@ where
 
     #[inline]
 	pub fn insert(&mut self, job: S,  timeout: Duration, fire_in: Duration, max_retry: usize) {
-
         let meta = CronMeta::new(timeout, fire_in, J::name(), max_retry);
         self.schedule.insert(meta, job);
     }
@@ -212,34 +219,44 @@ where
     #[inline]
     pub fn flush(&mut self) {
         let mut lock = self.schedule.tx.lock().unwrap();
-        lock.write(Operation::Clear);
-        lock.refresh();
+        // breaks test?
+        
+        
     }
 
     /// syntacially this function is called `process_reschedules` but it does do more
     /// It processes all the data the comes across the channel including reschedule
     pub async fn process_reschedules(&mut self, results: &mut Vec<(CronMeta, Option<R>, S)>) {
-        self.flush();
+
+        let mut lock = self.schedule.tx.lock().unwrap();
+        lock.refresh();
+        drop(lock);
 
         let preprocess_buf = self.channel.read().0.clone();
 
-        for (mut meta, mut ctrl, resp, mut state) in preprocess_buf {
-            ctrl = self.process_subscribers(&mut meta, ctrl, &mut state, &resp).await;
+        if preprocess_buf.len() > 0 { 
+            for (mut meta, mut ctrl, resp, mut state) in preprocess_buf {
+                ctrl = self.process_subscribers(&mut meta, ctrl, &mut state, &resp).await;
 
-            if meta.ctr > meta.max_ctr {
-                tracing::event!(target: "Schedule Thread", tracing::Level::INFO, "Killing Job {}", meta.id);
-                ctrl = SignalControl::Drop; 
+                if meta.ctr > meta.max_ctr {
+                    tracing::event!(target: "Schedule Thread", tracing::Level::INFO, "Killing Job {}", meta.id);
+                    ctrl = SignalControl::Drop; 
+                }
+
+                meta.ctr += 1;
+                
+                match ctrl {
+                    SignalControl::Reschedule(tts) => {
+                        meta.tts = tts;
+                        self.schedule.insert(meta, state);
+                    },
+                    SignalControl::Retry => self.schedule.insert(meta, state),
+                    SignalControl::Drop | SignalControl::Success(_) => results.push((meta, resp.clone(), state))
+                }
             }
-            meta.ctr += 1;
-            
-            match ctrl {
-                SignalControl::Reschedule(tts) => {
-                    meta.tts = tts;
-                    self.schedule.insert(meta, state);
-                },
-                SignalControl::Retry => self.schedule.insert(meta, state),
-                SignalControl::Drop | SignalControl::Success(_) => results.push((meta, resp.clone(), state))
-            }
+
+            let mut lock = self.schedule.tx.lock().unwrap();
+            lock.write(Operation::Clear);
         }
     }
 
@@ -258,11 +275,10 @@ where
 
 
 fn spawn_worker<J, R, S>(
-    mut vtx: Arc<Mutex<evc::WriteHandle<EVec<(CronMeta, SignalControl, Option<R>, S)>>>>,
+    vtx: Arc<Mutex<evc::WriteHandle<EVec<(CronMeta, SignalControl, Option<R>, S)>>>>,
     mut meta: CronMeta,
     mut state: S, 
-)
-where 
+) where 
     J: CRON<Response=R, State=S>,
     R: Send + Sync + 'static + Clone,
     S: Send + Sync + 'static + Clone

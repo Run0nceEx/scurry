@@ -103,6 +103,60 @@ fn noop_bench(b: &mut Bencher) {
     b.iter(|| rt.block_on(pool.process_reschedules(&mut rbuf)));
 }
 
+#[bench]
+fn rand_add_bench(b: &mut Bencher) {
+    
+    #[derive(Debug, Default, Clone)]
+    pub struct State {
+        a: u16,
+        b: u16
+    };
+
+    #[derive(Debug, Default)]
+    pub struct Worker {
+        count: usize,
+    }
+
+    #[async_trait::async_trait]
+    impl CRON for Worker 
+    {
+        type State = State;
+        type Response = usize;
+
+        /// Run function, and then append to parent if more jobs are needed
+        async fn exec(state: &mut Self::State) -> Result<(SignalControl, Option<Self::Response>), Error> {
+            Ok((SignalControl::Success(false), Some((state.a as u32 + state.b as u32) as usize)))
+        }
+
+        fn name() -> String {
+            "count_up_worker".to_string()
+        }
+    }
+
+    let mut rt = Runtime::new().unwrap();
+    let mut buf = Vec::new();
+
+    let mut pool = rt.block_on(async move {
+        let mut pool: CronPool<Worker, usize, State> = CronPool::new(POOLSIZE);
+
+        for _ in 0..JOB_CNT {
+            pool.insert(State {
+                a: rand::random(),
+                b: rand::random()
+            }, Duration::from_secs_f32(100.0), Duration::from_secs_f32(0.0), 3);
+        }
+
+
+        pool.release_ready(&mut buf).await.unwrap();
+        pool.fire_jobs(&mut buf);
+        pool
+    });
+
+    let mut rbuf = Vec::new();
+    b.iter(|| rt.block_on(pool.process_reschedules(&mut rbuf)));
+}
+
+
 #[test]
 fn single_in_single_out() {
     let mut rt = Runtime::new().unwrap();
@@ -121,7 +175,6 @@ fn single_in_single_out() {
         assert_eq!(buf.len(), 0);
         pool.release_ready(&mut buf).await.unwrap();
         assert_eq!(buf.len(), 1);
-
         
         pool.fire_jobs(&mut buf);
         
@@ -131,7 +184,41 @@ fn single_in_single_out() {
         pool.process_reschedules(&mut rbuf).await;
         
         assert_eq!(rbuf.len(), 1);
+    });
+}
 
+
+
+#[test]
+fn job_count_accurate() {
+    let mut rt = Runtime::new().unwrap();
+    let mut buf = Vec::new();
+
+    rt.block_on(async move {
+        let mut pool = noop::Pool::new(POOLSIZE);
+
+        pool.insert(
+            noop::State,
+            std::time::Duration::from_secs(100),
+            std::time::Duration::from_secs(0),
+            3
+        );
+        
+        assert_eq!(buf.len(), 0);
+        pool.release_ready(&mut buf).await.unwrap();
+        assert_eq!(buf.len(), 1);
+        
+
+        pool.fire_jobs(&mut buf);
+        assert_eq!(pool.job_count(), 2);
+        
+        tokio::time::delay_for(std::time::Duration::from_secs(2)).await;
+
+        let mut rbuf = Vec::new();
+        pool.process_reschedules(&mut rbuf).await;
+        
+        assert_eq!(rbuf.len(), 1);
+        assert_eq!(pool.job_count(), 1);
     });
 }
 

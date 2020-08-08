@@ -85,12 +85,12 @@ impl PrintSub {
 impl Subscriber<PortState, Job> for PrintSub {
     async fn handle(&mut self, meta: &mut CronMeta, signal: &SignalControl, resp: &Option<PortState>, state: &mut Job) -> Result<SignalControl, Error> {
         self.ctr += 1;
+        //dbg!(self.ctr);
         if self.ts.elapsed() >= Duration::from_secs(60) {
             tracing::event!(target: "Schedule Thread", tracing::Level::INFO, "Rate sample: [{}/min | {}/sec | {}/ms]", self.ctr, self.ctr/60, (self.ctr/60)/60);
             self.ts = Instant::now();
             self.ctr = 0;
         }
-        
         
         Ok(*signal)
     }

@@ -17,6 +17,7 @@ use pnet::datalink::{Channel, NetworkInterface, MacAddr};
 
 pub struct PartialTCPPacketData<'a> {
     pub destination_ip: Ipv4Addr,
+    pub destination_port: u16,
     pub iface_ip: Ipv4Addr,
     pub iface_name: &'a String,
     pub iface_src_mac: &'a MacAddr,
@@ -57,7 +58,7 @@ pub fn build_random_packet(partial_packet: &PartialTCPPacketData, tmp_packet: &m
         let mut tcp_header = MutableTcpPacket::new(&mut tmp_packet[(ETHERNET_HEADER_LEN + IPV4_HEADER_LEN)..]).unwrap();
 
         tcp_header.set_source(rand::random::<u16>());
-        tcp_header.set_destination(rand::random::<u16>());
+        tcp_header.set_destination(partial_packet.destination_port);
 
         tcp_header.set_flags(TcpFlags::SYN);
         tcp_header.set_window(64240);
