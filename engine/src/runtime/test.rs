@@ -355,15 +355,14 @@ fn all_timeout() {
         
         tokio::time::delay_for(std::time::Duration::from_secs(5)).await;
         
-        assert_eq!(pool.next().await, None);
-        assert_eq!(pool.job_count(), JOB_CNT+1);
-        assert_eq!(pool.next().await, None);
-        assert_eq!(pool.job_count(), JOB_CNT+1);
-        assert_eq!(pool.next().await, None);
-        assert_eq!(pool.job_count(), JOB_CNT+1);
-        assert_eq!(pool.next().await, None);
-        assert_eq!(pool.job_count(), JOB_CNT+1);
-        assert_eq!(pool.next().await, None);
+        while let Some(data) = pool.next().await {
+            for (meta, ..) in data {
+                assert_eq!(meta.ctr, 2)
+            }
+        }
+        
+        assert_eq!(pool.job_count(), 1);
+       
 
     });
 }

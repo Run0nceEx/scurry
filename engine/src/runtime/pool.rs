@@ -125,8 +125,6 @@ where
                 ctrl = SignalControl::Drop; 
             }
 
-            meta.ctr += 1;
-            eprintln!("{}", meta.ctr);
             
             match ctrl {
                 SignalControl::Retry => {
@@ -161,7 +159,7 @@ fn spawn_worker<J, R, S>(
         tracing::event!(target: "Schedule Thread", tracing::Level::TRACE, "Firing job {}", meta.id);
         let now = std::time::Instant::now();
 
-        let (sig, resp) = match timeout(meta.ttl, J::exec(&mut state)).await {
+        let (mut sig, resp) = match timeout(meta.ttl, J::exec(&mut state)).await {
             Ok(Ok((sig, resp))) => (sig, resp),
 
             Err(_) | Ok(Err(_)) => {
@@ -173,6 +171,21 @@ fn spawn_worker<J, R, S>(
         meta.record_elapsed(now);
         
         tracing::event!(target: "Schedule Thread", tracing::Level::TRACE, "Completed job {}", meta.id);
+        
+        if meta.ctr >= meta.max_ctr {
+            tracing::event!(target: "Schedule Thread", tracing::Level::INFO, "Killing Job {}", meta.id);
+            sig = SignalControl::Drop; 
+        }
+
+        meta.ctr += 1;
+        
+        match sig {
+            SignalControl::Retry => {
+                spawn_worker::<J, R, S>(vtx.clone(), meta, state);
+                return;
+            },
+            _ => {} 
+        }
         
         let mut lock = vtx.lock().unwrap();
         lock.write(Operation::Push((meta, sig ,resp, state)));

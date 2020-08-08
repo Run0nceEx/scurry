@@ -55,18 +55,3 @@ impl PartialOrd for SignalControl {
         Some(Ord::cmp(self, other))
     }
 }
-
-#[async_trait::async_trait]
-pub trait Subscriber<R, S>: std::fmt::Debug {
-    async fn handle(&mut self, 
-        meta: &mut super::meta::CronMeta,
-        signal: &SignalControl,
-        data: &Option<R>,
-        state: &mut S
-    ) -> Result<SignalControl, Error>;
-}
-
-#[async_trait::async_trait]
-pub trait MetaSubscriber: std::fmt::Debug {
-    async fn handle(&mut self, meta: &mut super::meta::CronMeta, signal: &SignalControl) -> Result<SignalControl, Error>;
-}
