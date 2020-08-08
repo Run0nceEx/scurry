@@ -76,7 +76,7 @@ pub mod noop {
 
     // pub fn get_pool(timeout: f32, fire_in: f32, max_retries: usize) -> Pool {
     //     let mut pool: Pool = Pool::new(POOLSIZE);
-
+    //     let buf = 
     //     for _ in 0..JOB_CNT {
     //         pool.insert(State, Duration::from_secs_f32(timeout), Duration::from_secs_f32(fire_in), max_retries);
     //     }
@@ -86,23 +86,22 @@ pub mod noop {
 }
 
 
-// #[bench]
-// fn noop_bench(b: &mut Bencher) {
+#[bench]
+fn noop_bench(b: &mut Bencher) {
 
-//     let mut rt = Runtime::new().unwrap();
-//     let mut buf = Vec::new();
+    let mut rt = Runtime::new().unwrap();
+    let mut buf = vec![(
+        CronMeta::new(Duration::from_secs_f32(100.0), Duration::from_secs_f32(0.0), 3),
+        noop::State
+    ); JOB_CNT];
 
-//     let mut pool = rt.block_on(async move {
-//         let mut pool = noop::get_pool(100.0, 0.0, 3);
+    let mut pool = noop::Pool::new(POOLSIZE);
+    rt.block_on(async {
+        pool.fire_jobs(&mut buf)
+    });
 
-//         pool.release_ready(&mut buf).await.unwrap();
-//         pool.fire_jobs(&mut buf);
-//         pool
-//     });
-
-//     let mut rbuf = Vec::new();
-//     b.iter(|| rt.block_on(pool.process_reschedules(&mut rbuf)));
-// }
+    b.iter(|| rt.block_on(pool.next()));
+}
 
 #[bench]
 fn rand_add_bench(b: &mut Bencher) {
