@@ -23,7 +23,7 @@ impl From<TimeError> for Error {
 
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        unimplemented!()
+        write!(f, "{:?}", self)
     }
 }
 
