@@ -1,20 +1,15 @@
 use std::{
     collections::HashMap,
-    pin::Pin,
     time::Duration,
-    task::{Poll, Context}
 };
 
 use super::{
-    pool::CronPool,
-    meta::CronMeta,
-    CRON,
-    SignalControl
+    meta::CronMeta
 };
 
 use tokio::{
     time::DelayQueue,
-    stream::{Stream, StreamExt}
+    stream::StreamExt
 };
 
 
