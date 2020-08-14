@@ -64,7 +64,7 @@ impl CRON for OpenPortJob
                                 
                                 _ => {
                                         //tracing::event!(target: "Schedule Thread", tracing::Level::WARN, "Error Code: {}", error_code);
-                                        return Ok((SignalControl::Success(true), Some(PortState::Open(state.addr))))
+                                        return Ok((SignalControl::Success(false), Some(PortState::Closed(state.addr))))
                                 } 
                             };
                         }
