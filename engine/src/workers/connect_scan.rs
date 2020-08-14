@@ -96,7 +96,6 @@ impl CRON for OpenPortJob
 
 async fn scan(addr: SocketAddr) -> Result<(), crate::error::Error> {
     //TODO Add timeout
-    let mut connection = TcpStream::connect(addr).await?;
-    
+    TcpStream::connect(addr).await?;
     Ok(())
 }

@@ -1,9 +1,19 @@
 use std::fs::File;
 use std::io::{BufReader, BufRead};
 
+#[derive(Debug)]
 pub enum Boundary {
     Limited(usize),
     Unlimited
+}
+
+impl std::fmt::Display for Boundary {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Boundary::Limited(x) => write!(f, "Limited({})", x),
+            Boundary::Unlimited => write!(f, "Unlimited")
+        }
+    }
 }
 
 pub fn get_max_fd() -> Result<Boundary, Box<std::error::Error>> {
