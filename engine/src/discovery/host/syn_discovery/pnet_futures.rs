@@ -60,51 +60,8 @@ impl<'a> Stream for TransportStream<'a> {
                 ))))
             },
 
-            Ok(None) => Poll::Pending,
+            Ok(None) => Poll::Ready(None),
             Err(e) => Poll::Ready(Some(Err(e))),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use pnet::packet::ip::IpNextHeaderProtocols;
-    use pnet::transport::transport_channel;
-    use pnet::transport::TransportChannelType::Layer4;
-    use pnet::transport::TransportProtocol::Ipv4;
-    use tokio::runtime::Runtime;
-    use tokio::stream::StreamExt;
-
-    mod must_run_with_sudo {
-        use super::*;
-        // #[test]
-        // fn raw_packet_listen() {
-        //     let mut rt = Runtime::new().unwrap();
-
-            
-        //     let protocol = Layer4(Ipv4(IpNextHeaderProtocols::Test1));
-
-        //     // Create a new transport channel, dealing with layer 4 packets on a test protocol
-        //     // It has a receive buffer of 4096 bytes.
-        //     let (mut tx, mut rx) = match transport_channel(4096, protocol) {
-        //         Ok((tx, rx)) => (tx, rx),
-        //         Err(e) => panic!(
-        //             "An error occurred when creating the transport channel: {}",
-        //             e
-        //         ),
-        //     };
-            
-        //     let transport_stream = TransportStream::new(&mut rx);
-            
-        //     // rt.block_on(
-        //     //     transport_stream
-        //     //         .filter_map(|x| x.ok())
-        //     //         .map(|(p, a)| println!("packet [{}]: {:#?}", a, p))
-        //     //         .next()
-        //     // );
-            
-        //     assert_eq!(2 + 2, 4);
-        // }
     }
 }

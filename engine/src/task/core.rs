@@ -8,8 +8,6 @@ pub trait CRON: std::fmt::Debug {
 
     /// Run function, and then append to parent if more jobs are needed
     async fn exec(state: &mut Self::State) -> Result<(SignalControl, Option<Self::Response>), Error>;
-
-    fn name() -> String;
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]

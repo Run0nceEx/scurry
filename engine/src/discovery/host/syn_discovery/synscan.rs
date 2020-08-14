@@ -67,7 +67,7 @@ pub fn build_random_packet(partial_packet: &PartialTCPPacketData, tmp_packet: &m
     }
 }
 
-pub fn send_tcp_packets(destination_ip: Ipv4Addr, interface: String, count: u32) {
+pub fn send_tcp_packets(destination_ip: Ipv4Addr, port: u16, interface: String) {
     let interfaces = pnet::datalink::interfaces();
 
     println!("List of Available Interfaces\n");
@@ -95,6 +95,7 @@ pub fn send_tcp_packets(destination_ip: Ipv4Addr, interface: String, count: u32)
 
     let partial_packet: PartialTCPPacketData = PartialTCPPacketData {
         destination_ip: destination_ip,
+        destination_port: port,
         iface_ip,
         iface_name: &interface.name,
         iface_src_mac: &interface.mac.unwrap(),
@@ -106,14 +107,64 @@ pub fn send_tcp_packets(destination_ip: Ipv4Addr, interface: String, count: u32)
         Err(e) => panic!("Error happened {}", e),
     };
 
-    for i in 0..count {
+    
+    tx.build_and_send(1, 66, &mut |packet: &mut [u8]| 
+        build_random_packet(&partial_packet, packet)
+    );
+}
 
-        if &i % 10000 == 0 {
-            println!("Sent {:?} packets", &i);
-        }
 
-        tx.build_and_send(1, 66, &mut |packet: &mut [u8]| {
-            build_random_packet(&partial_packet, packet);
+pub fn get_interface(interface: String) -> (pnet::datalink::NetworkInterface, Ipv4Addr) {
+    let interfaces = pnet::datalink::interfaces();
+    
+    //println!("List of Available Interfaces\n");
+    
+    for interface in interfaces.iter() {
+        let iface_ip = interface.ips.iter().next().map(|x| match x.ip() {
+            IpAddr::V4(ipv4) => Some(ipv4),
+            _ => panic!("ERR - Interface IP is IPv6 (or unknown) which is not currently supported"),
         });
     }
+    
+    let iface = interfaces
+        .into_iter()
+        .filter(|iface: &NetworkInterface| iface.name == interface)
+        .next()
+        .expect(&format!("could not find interface by name {}", interface));
+    
+    let ip = match iface.ips.iter().nth(0).expect(&format!("the interface {} does not have any IP addresses", interface)).ip() {
+        IpAddr::V4(ipv4) => ipv4,
+        _ => panic!("ERR - Interface IP is IPv6 (or unknown) which is not currently supported"),
+    };
+
+    (iface, ip)
 }
+
+
+
+extern crate test;
+
+#[bench]
+fn send_syn_packet(b: &mut test::Bencher) {
+    let (interface, iface_ip) = get_interface("enp0s25".to_string());
+    
+    let partial_packet: PartialTCPPacketData = PartialTCPPacketData {
+        destination_ip: "1.1.1.1".parse().unwrap(),
+        destination_port: 9992,
+        iface_ip,
+        iface_name: &interface.name,
+        iface_src_mac: &interface.mac.unwrap(),
+    };
+        let (mut tx, _) = match pnet::datalink::channel(&interface, Default::default()) {
+        Ok(Channel::Ethernet(tx, rx)) => (tx, rx),
+        Ok(_) => panic!("Unknown channel type"),
+        Err(e) => panic!("Error happened {}", e),
+    };
+        
+    b.iter(||
+        tx.build_and_send(1, 66, &mut |packet: &mut [u8]| 
+            build_random_packet(&partial_packet, packet)
+        )
+    );
+}
+

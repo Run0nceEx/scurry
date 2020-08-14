@@ -1,9 +1,5 @@
 use crate::{
-    task::{
-        {SignalControl, CRON},
-        //pool::Subscriber,
-        CronMeta,
-    },
+    task::{SignalControl, CRON},
     error::Error,
 };
 
@@ -22,6 +18,13 @@ impl Job {
         }
     }
 }
+
+impl From<SocketAddr> for Job {
+    fn from(s: SocketAddr) -> Self {
+        Self::new(s)
+    }
+}
+
 
 #[derive(Debug, Clone)]
 pub enum PortState {
@@ -55,15 +58,14 @@ impl CRON for OpenPortJob
                     std::io::ErrorKind::Other => {
                         if let Some(error_code) = x.raw_os_error() {
                             match error_code {
-                                //101         // Network unreachable
-                                //| 113       // no route to host
-                                //| 92        // failed to bind to interface/protocol
-                                //| 
-                                //24 =>     // too many file-discriptors open
-                                //    return Ok((SignalControl::Retry, None)),
+                                101         // Network unreachable
+                                | 113       // no route to host
+                                | 92        // failed to bind to interface/protocol
+                                | 24 =>     // too many file-discriptors open
+                                    return Ok((SignalControl::Stash(Duration::from_secs(5)), None)),
                                 
                                 _ => {
-                                        //tracing::event!(target: "Schedule Thread", tracing::Level::WARN, "Error Code: {}", error_code);
+                                        tracing::event!(target: "Schedule Thread", tracing::Level::WARN, "Error Code: {}", error_code);
                                         return Ok((SignalControl::Success(false), Some(PortState::Closed(state.addr))))
                                 } 
                             };
@@ -87,15 +89,35 @@ impl CRON for OpenPortJob
             }
         }
     }
-
-    fn name() -> String {
-        let x = format!("{:?}", OpenPortJob);
-        x
-    }
 }
 
 async fn scan(addr: SocketAddr) -> Result<(), crate::error::Error> {
-    //TODO Add timeout
     TcpStream::connect(addr).await?;
     Ok(())
+}
+
+
+#[cfg(test)]
+mod test {
+    extern crate test;
+    
+    use super::*;
+    use tokio::runtime::Runtime;
+    use tokio::net::TcpListener;
+
+    #[bench]
+    fn tokio_connect(b: &mut test::Bencher) {
+        let mut rt = Runtime::new().unwrap();
+        let addr: SocketAddr = "127.0.0.1:20927".parse().unwrap();
+        
+        rt.spawn(async move {
+            let mut listener = TcpListener::bind(addr).await.unwrap();
+            loop {    
+                let (con, _addr) = listener.accept().await.unwrap();
+                drop(con);
+            }
+        });
+        
+        b.iter(|| rt.block_on(TcpStream::connect(addr)));
+    }
 }

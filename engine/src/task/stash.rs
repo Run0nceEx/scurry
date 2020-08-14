@@ -45,11 +45,15 @@ impl<S> Stash<S>
 
     /// Release tasks from Timer
     pub async fn release(&mut self, jobs: &mut Vec<(CronMeta, S)>) {
-        // wait wtf timer is a stream?!
         while let Some(Ok(res)) = self.timer.next().await {
             if let Some((meta, state)) = self.stash.remove(res.get_ref()) {
                 jobs.push((meta, state));
             }
         }
+    }
+
+    pub fn amount(&self) -> usize {
+        self.timer.len()
+        
     }
 }

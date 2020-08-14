@@ -68,10 +68,6 @@ pub mod noop {
         async fn exec(_state: &mut Self::State) -> Result<(SignalControl, Option<Self::Response>), Error> {
             Ok((SignalControl::Success(false), Some(R::default())))
         }
-
-        fn name() -> String {
-            "noopworker".to_string()
-        }
     }
 
     // pub fn get_pool(timeout: f32, fire_in: f32, max_retries: usize) -> Pool {
@@ -125,10 +121,6 @@ fn rand_add_bench(b: &mut Bencher) {
         /// Run function, and then append to parent if more jobs are needed
         async fn exec(state: &mut Self::State) -> Result<(SignalControl, Option<Self::Response>), Error> {
             Ok((SignalControl::Success(false), Some((state.a as u32 + state.b as u32) as usize)))
-        }
-
-        fn name() -> String {
-            "count_up_worker".to_string()
         }
     }
 
@@ -326,10 +318,6 @@ fn all_timeout() {
         async fn exec(_state: &mut Self::State) -> Result<(SignalControl, Option<Self::Response>), Error> {            
             tokio::time::delay_for(Duration::from_secs(3)).await;
             Ok((SignalControl::Success(false), Some(mock::Response)))
-        }
-
-        fn name() -> String {
-            format!("{:?}", Worker)
         }
     }
 

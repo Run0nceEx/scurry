@@ -1,13 +1,11 @@
 #![feature(test)]
 #[macro_use] extern crate tracing;
-
 mod util;
 
 mod task;
 
 use task::{
 	pool::CronPool,
-	meta::CronMeta,
 	stash::Stash,
 	SignalControl
 };
@@ -20,14 +18,10 @@ use workers::{
 mod error;
 use error::Error;
 
-use tokio::io::BufReader;
-use tokio::prelude::*;
-use tokio::stream::{StreamExt, Stream};
+use tokio::stream::StreamExt;
 
-use tracing::{info, Level};
+use tracing::Level;
 use tracing_subscriber::FmtSubscriber;
-
-use std::time::Duration;
 
 fn setup_subscribers() {
 	let subscriber = FmtSubscriber::builder()
@@ -42,37 +36,6 @@ fn setup_subscribers() {
 }
 
 
-async fn read_ip_port_file(job_buf: &mut Vec<(CronMeta, Job)>) -> Result<(), Error> {
-	let file = tokio::fs::File::open("/home/ghost/projects/px-engine/proxbox-rs/engine/sample.lst").await?;
-	let mut reader = BufReader::new(file);
-	let mut buf = String::new();
-
-	while let Ok(n) = reader.read_line(&mut buf).await {
-		match buf.trim().parse::<std::net::SocketAddr>() {
-				Ok(addr) =>  {
-					let meta = CronMeta::new(Duration::from_secs_f32(5.0), Duration::from_secs_f32(0.0), 3);
-					let job = Job::new(addr);
-					job_buf.push((meta, job));
-				},
-				
-				Err(e) => {
-					eprintln!("failed to parse {}", buf.trim())
-				}	
-		}
-		
-		if n == 0 {
-			break
-		}
-
-		buf.clear();
-
-	}
-	Ok(())
-}
-
-
-
-
 #[tokio::main]
 async fn main() -> Result<(), Error> {
 	setup_subscribers();
@@ -82,6 +45,7 @@ async fn main() -> Result<(), Error> {
 	let throttle = {
 		tracing::event!(target: "Schedule Thread", tracing::Level::INFO, "throttle set at {}", boundary);
 		match boundary {
+			
 			util::Boundary::Limited(x) => x,
 			util::Boundary::Unlimited => 0
 		}
@@ -91,12 +55,11 @@ async fn main() -> Result<(), Error> {
 	let mut stash: Stash<Job> = Stash::new();
 	let mut job_buf = Vec::new();
 
-	read_ip_port_file(&mut job_buf).await?;
+	util::read_ip_port_file("/home/ghost/projects/px-engine/proxbox-rs/engine/sample.lst", &mut job_buf).await?;
 
-	tracing::event!(target: "Schedule Thread", tracing::Level::TRACE, "Queued [{}] jobs", job_buf.len());
+	tracing::event!(target: "Schedule Thread", tracing::Level::INFO, "Queued [{}] jobs", job_buf.len());
 	
 	let mut ticker = std::time::Instant::now();
-	let mut prev_count = job_buf.len();
 
 	loop {
 		stash.release(&mut job_buf).await;
@@ -107,20 +70,23 @@ async fn main() -> Result<(), Error> {
 		}
 
 		if ticker.elapsed() >= std::time::Duration::from_secs(5) {
+			
 			tracing::event!(
-				target: "Schedule Thread", tracing::Level::DEBUG, "Job count is [{}/{} | +/- {}] jobs",
+				target: "Schedule Thread", tracing::Level::DEBUG, "Job count is [{}/{} | stash: {}] jobs",
 				job_pool.job_count(), job_buf.len(),
-				prev_count - job_buf.len()
+				stash.amount()
 			);
 
-			prev_count = job_buf.len();
 			ticker = std::time::Instant::now();
 		}
 
 		while let Some(chunk) = job_pool.next().await {
 			for (meta, ctrl, resp, state) in chunk {
 				match ctrl {
-					SignalControl::Stash(duration) => stash.insert(meta, state, &duration),
+					SignalControl::Stash(duration) => {
+						//println!("HELLO");
+						stash.insert(meta, state, &duration)
+					},
 					SignalControl::Success(x) => {
 						if let Some(PortState::Open(addr)) = resp {
 							println!("open: {}", addr);
@@ -131,7 +97,7 @@ async fn main() -> Result<(), Error> {
 			}
 		}
 
-		if job_pool.job_count() == 1 {
+		if job_pool.job_count() == 1 && stash.amount() == 0 {
 			println!("Finished all jobs.");
 			return Ok(())
 		}
