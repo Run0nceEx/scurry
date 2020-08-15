@@ -21,6 +21,7 @@ use std::time::Duration;
 pub const JOB_CNT: usize = 100;
 pub const POOLSIZE: usize = 16_384;
 
+#[cfg(test)]
 pub mod noop {
     use super::*;
 
@@ -83,7 +84,7 @@ pub mod noop {
 
 
 #[bench]
-fn noop_bench(b: &mut Bencher) {
+fn pool_poll_noop_bench(b: &mut Bencher) {
 
     let mut rt = Runtime::new().unwrap();
     let mut buf = vec![(
@@ -100,7 +101,8 @@ fn noop_bench(b: &mut Bencher) {
 }
 
 #[bench]
-fn rand_add_bench(b: &mut Bencher) {
+fn pool_poll_addition_bench(b: &mut Bencher) {
+
     #[derive(Debug, Default, Clone)]
     pub struct State {
         a: u16,
@@ -127,6 +129,8 @@ fn rand_add_bench(b: &mut Bencher) {
     let mut rt = Runtime::new().unwrap();
     let mut buf = Vec::new();
 
+
+    
     for _ in 0..JOB_CNT {
         let meta = CronMeta::new(Duration::from_secs_f32(100.0), Duration::from_secs_f32(0.0), 3);
         buf.push((meta, State {
@@ -146,7 +150,7 @@ fn rand_add_bench(b: &mut Bencher) {
 
 
 #[test]
-fn single_in_single_out() {
+fn pool_single_in_single_out() {
     let mut rt = Runtime::new().unwrap();
     let mut buf = Vec::new();
 
@@ -168,7 +172,7 @@ fn single_in_single_out() {
 
 
 #[test]
-fn job_count_accurate() {
+fn pool_job_count_accurate() {
     let mut rt = Runtime::new().unwrap();
 
     let mut buf = vec![(
@@ -197,7 +201,7 @@ fn all_in_all_out() {
     let mut buf = vec![(
         CronMeta::new(Duration::from_secs_f32(100.0), Duration::from_secs_f32(0.0), 3),
         noop::State
-    ); 100];
+    ); JOB_CNT];
     
     rt.block_on(async move {
         let mut pool = noop::Pool::new(POOLSIZE, 0);
@@ -214,91 +218,54 @@ fn all_in_all_out() {
 
 
 //Run all once, retry, run again, succeed, all in; all out
-// #[test]
-// fn all_retry_now_once() {
-//     use noop as mock;
+#[test]
+fn all_retry_now_once() {
+    use noop as mock;
     
-//     #[derive(Debug)]
-//     struct RetryOnce;
+    #[derive(Debug)]
+    struct Worker;
 
-//     #[async_trait::async_trait]
-//     impl MetaSubscriber for RetryOnce {
-//         async fn handle(&mut self, meta: &mut CronMeta, _signal: &SignalControl) -> Result<SignalControl, Error>
-//         {
-//             match meta.ctr {
-//                 0 | 1 => {
-//                     println!("on iter: {}", meta.ctr);
-//                     return Ok(SignalControl::Reschedule(std::time::Duration::from_secs(0))) 
-                
-//                 }, // set up retry
-//                 _ => {
-//                     println!("on iter: {} [DONE]", meta.ctr);
-//                     return Ok(SignalControl::Success(false)) // auto pass
-//                 }
-//             }            
-//         }
-//     }
+    #[async_trait::async_trait]
+    impl CRON for Worker {
+        type State = usize;
+        type Response = mock::Response;
 
-//     //create async runtime
-//     let mut rt = Runtime::new().unwrap();
-//     let mut buf = Vec::new();
+        async fn exec(state: &mut Self::State) -> Result<(SignalControl, Option<Self::Response>), Error> {            
+            *state += 1;
 
-//     rt.block_on(async move {
-//         let mut pool = mock::get_pool(100.0, 0.0, 3);
-//         pool.subscribe_meta_handler(RetryOnce);
-
-//         // FIRST ITER
-//         assert_eq!(pool.schedule.bank.len(), JOB_CNT);
-//         pool.release_ready(&mut buf).await.unwrap();
-//         assert_eq!(pool.schedule.bank.len(), 0);
-//         assert_eq!(buf.len(), JOB_CNT);
+            if *state > 1 {
+                Ok((SignalControl::Success(false), Some(mock::Response)))
+            }
+            else {
+                Ok((SignalControl::Retry, Some(mock::Response)))
+            }
+            
+        }
+    }
 
 
-//         // Fire and retrieve once
-//         pool.fire_jobs(&mut buf);
-//         assert_eq!(buf.len(), 0);
-//         tokio::time::delay_for(std::time::Duration::from_secs(5)).await;
+    //create async runtime
+    let mut rt = Runtime::new().unwrap();
+    let mut buf = vec![(
+        CronMeta::new(Duration::from_secs_f32(100.0), Duration::from_secs_f32(0.0), 3),
+        0
+    ); JOB_CNT];
+    
+    let mut pool: CronPool<Worker, mock::Response, usize> = CronPool::new(POOLSIZE, 0);
 
-//         // capture all the results
-//         let mut rbuf = Vec::new();
-//         pool.process_reschedules(&mut rbuf).await;
-//         assert_eq!(rbuf.len(), 0);
+    rt.block_on(async move {
+        
+        // Fire and retrieve once
+        pool.fire_jobs(&mut buf);
+        assert_eq!(buf.len(), 0);
+        tokio::time::delay_for(std::time::Duration::from_secs(5)).await;
 
-
-//         // SECOND ITER
-//         assert_eq!(pool.schedule.bank.len(), JOB_CNT);
-//         pool.release_ready(&mut buf).await.unwrap(); // reschedule delayed
-//         assert_eq!(pool.schedule.bank.len(), 0);
-//         assert_eq!(buf.len(), JOB_CNT); // check we got all back
-
-//         // Fire and retrieve once
-//         pool.fire_jobs(&mut buf);
-//         assert_eq!(buf.len(), 0);
-
-//         tokio::time::delay_for(std::time::Duration::from_secs(2)).await;
-//         assert_eq!(pool.schedule.bank.len(), 0);
-
-//         pool.process_reschedules(&mut rbuf).await;
-
-
-//         // THIRD ITER
-//         assert_eq!(pool.schedule.bank.len(), JOB_CNT);
-//         pool.release_ready(&mut buf).await.unwrap(); // reschedule delayed
-//         assert_eq!(pool.schedule.bank.len(), 0);
-//         assert_eq!(buf.len(), JOB_CNT); // check we got all back
-
-//         // Fire and retrieve once
-//         pool.fire_jobs(&mut buf);
-//         assert_eq!(buf.len(), 0);
-
-//         tokio::time::delay_for(std::time::Duration::from_secs(2)).await;
-//         assert_eq!(pool.schedule.bank.len(), 0);
-
-//         pool.process_reschedules(&mut rbuf).await;
-
-//         assert_eq!(rbuf.len(), JOB_CNT);
-//     });
-// }
+        for (meta, ctrl, resp, state) in pool.next().await.unwrap() {
+            assert_eq!(meta.ctr, 2);
+            assert_eq!(state, 2);
+        }
+    });
+}
 
 
 
@@ -354,23 +321,3 @@ fn all_timeout() {
 
     });
 }
-
-
-// if the mspc::channel has nothing in its queue, it will block
-// we have to make sure we bypass blocked execution
-
-// #[test]
-// fn does_not_block() {
-//     let mut rt = Runtime::new().unwrap();
-
-//     rt.block_on(async move {
-//         let mut pool = noop::Pool::new(POOLSIZE);
-
-//         let mut rbuf = Vec::new();
-//         match tokio::time::timeout(std::time::Duration::from_secs(10), pool.process_reschedules(&mut rbuf)).await {
-//             Ok(_) => assert_eq!(0, 0),
-//             Err(_) => assert_eq!(1, 0)
-//         }
-//     });
-// }
-
