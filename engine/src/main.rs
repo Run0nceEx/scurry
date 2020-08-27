@@ -1,18 +1,16 @@
 #![feature(test)]
 
-mod input;
 mod cli;
-
 mod libcore;
-mod menu;
-use crate::input::parser::ScanMethod;
 
-
-mod error;
-use error::Error;
+use crate::cli::input::parser::ScanMethod;
+use crate::cli::error::Error;
 
 use tracing::Level;
 use tracing_subscriber::FmtSubscriber;
+use structopt::StructOpt;
+use tokio::runtime::Runtime;
+
 
 fn setup_subscribers() {
 	let subscriber = FmtSubscriber::builder()
@@ -26,25 +24,20 @@ fn setup_subscribers() {
         .expect("setting default subscriber failed");
 }
 
-use std::net::SocketAddr;
-
-
-
-use structopt::StructOpt;
 
 fn main() -> Result<(), Error> {
-	use tokio::runtime::Runtime;
+	let opt = cli::args::Arguments::from_args();
+	
+	let mut results_buf = Vec::new();
 
 	let mut runtime: Runtime = Runtime::new()?;
-	let opt = cli::Cli::from_args();
-
 	return runtime.block_on(async move {
 		setup_subscribers();
 		
 		match opt.method {
-			ScanMethod::Open => {},
-			ScanMethod::Socks5 => {}
-		}
+			ScanMethod::Open => cli::menu::connect_scan(unimplemented!().drain(), &mut results_buf).await,
+			ScanMethod::Socks5 => cli::menu::socks_scan(unimplemented!().drain(), ).await
+		};
 
 		Ok(())	
 	});

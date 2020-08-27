@@ -7,13 +7,13 @@ use tokio::io::{AsyncWriteExt, AsyncReadExt};
 use tokio::net::TcpStream;
 use std::net::SocketAddr;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ScanResult {
     SockProxy((AuthMethod, SocketAddr)),
     Other(SocketAddr),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum AuthMethod {
     NoAuth,
     GSSAPI,
@@ -55,9 +55,9 @@ async fn scan(addr: SocketAddr) -> Result<ScanResult, Error> {
     | 1  |    1     | 1 to 255 |
     +----+----------+----------+*/  
     const GREETING: [u8; 3] = [
-        0x05, // version
-        0x01, // nmethods: 1-255
-        0x00  // auth-methods: No-auth (1)   
+        5, // version
+        1, // nmethods: 1-255 (1)
+        0  // auth-methods: No-auth (1)   
     ];
     
     let mut con = TcpStream::connect(addr).await?;

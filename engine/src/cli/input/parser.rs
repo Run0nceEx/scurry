@@ -5,7 +5,7 @@ use std::{
 };
 
 use cidr_utils::cidr::IpCidr;
-use crate::error::Error;
+use crate::cli::error::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum AddressInput {
@@ -23,7 +23,7 @@ pub fn address_parser(src: &str) -> Result<AddressInput, Error> {
         return Ok(AddressInput::CIDR(IpCidr::from_str(src)?))
     }
     
-    else if (src.contains(".") && src.matches('.').count() == 4) 
+    else if (src.contains(".") && src.matches('.').count() == 4)
          || (src.contains(":") && src.matches(':').count() > 1)
     {
         return Ok(AddressInput::Singleton(src.parse()?))

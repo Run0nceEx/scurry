@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io::{BufReader, BufRead};
 
 use super::parser::{address_parser, AddressInput};
-use crate::error::Error;
+use crate::cli::error::Error;
 
 pub struct InputFile {
 	reader: BufReader<File>,

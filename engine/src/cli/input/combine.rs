@@ -114,7 +114,6 @@ mod test {
         copy_data.extend(data.iter().map(|x| *x));
 
         let check: Vec<SocketAddr> = copy_data.drain().collect();
-
         assert_eq!(check, data);
     }
 }

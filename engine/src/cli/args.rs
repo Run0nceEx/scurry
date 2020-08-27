@@ -5,7 +5,7 @@ use super::input::parser::*;
 
 #[derive(Debug, StructOpt)]
 #[structopt(about = "Port scanner")]
-pub struct Cli {
+pub struct Arguments {
     #[structopt(long, env = "PXENGINE_DEBUG")]
     pub debug: bool,
     
