@@ -1,9 +1,9 @@
 use std::{
     net::{IpAddr},
-    ops::Range,
     path::{PathBuf, Path}
 };
 
+use crate::libcore::util::PortInput;
 use cidr_utils::cidr::IpCidr;
 use crate::cli::error::Error;
 
@@ -32,12 +32,6 @@ pub fn address_parser(src: &str) -> Result<AddressInput, Error> {
     Err(Error::CliError("unrecognized ip address format".to_string()))
 }
 
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum PortInput {
-    Singleton(u16),
-    Range(Range<u16>)
-}
 
 impl std::convert::TryFrom<&str> for PortInput {
     type Error = Error;

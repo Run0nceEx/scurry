@@ -1,6 +1,6 @@
 use cidr_utils::cidr::{IpCidrIpAddrIterator, IpCidr};
 use std::net::{IpAddr, SocketAddr};
-use super::parser::PortInput;
+use crate::libcore::util::PortInput;
 
 pub struct IpAddrPortCombinator<'a> {
 	inner: IpAddr,

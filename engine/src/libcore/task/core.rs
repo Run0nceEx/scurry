@@ -5,6 +5,7 @@ use super::{
     pool::CronPool
 };
 use tokio::stream::StreamExt;
+use smallvec::SmallVec;
 
 /// Used in scheduler (Command run on)
 #[async_trait::async_trait]
@@ -41,8 +42,10 @@ where
 {
     pub pool: CronPool<J, R, S>,
     timer: std::time::Instant,
-    job_buffer: Vec<(CronMeta, S)>,
-    stash: Stash<S>
+    queued: Vec<(CronMeta, S)>,
+    stash: Stash<S>,
+
+    work_buf: Vec<(CronMeta, SignalControl, Option<R>, S)>
 }
 
 impl<J, R, S> Pool<J, R, S> 
@@ -56,42 +59,47 @@ where
         Self {
             pool,
             timer: std::time::Instant::now(),
-            job_buffer: Vec::new(),
-            stash: Stash::new()
+            queued: Vec::new(),
+            stash: Stash::new(),
+
+            work_buf: Vec::new()
         }
     }
 
-    pub async fn tick(&mut self) -> Vec<(CronMeta, SignalControl, Option<R>, S)> {
-        self.stash.release(&mut self.job_buffer).await;
+    pub async fn tick<'a>(&'a mut self) -> &'a [(CronMeta, SignalControl, Option<R>, S)] {
+        self.work_buf.clear();
+        self.stash.release(&mut self.queued).await;
         
-		if self.job_buffer.len() > 0 {
-			self.pool.fire_jobs(&mut self.job_buffer);
+		if self.queued.len() > 0 {
+			self.pool.fire_jobs(&mut self.queued);
 		}
 
 		if self.timer.elapsed() >= std::time::Duration::from_secs(5) {			
 			tracing::event!(
 				target: "Pool", tracing::Level::DEBUG, "Job count is [{}/{}] jobs",
-				self.pool.job_count(), self.job_buffer.len(),
+				self.pool.job_count(), self.queued.len(),
 			);
 
 			self.timer = std::time::Instant::now();
         }
-        
-        // maybe should be attachment of self to avoid re-malloc
-        let mut b = Vec::new();
 
         while let Some(mut chunk) = self.pool.next().await {
-            b.extend(chunk.drain(..).filter_map(|(meta, ctrl, resp, state)| {
-                match ctrl {
-					SignalControl::Stash(duration) => {
-						self.stash.insert(meta, state, &duration);
-                        None
-                    },
-					_ => Some((meta, ctrl, resp, state))
-				}
-            }));
+            let processed_chunk: SmallVec<[(CronMeta, SignalControl, Option<R>, S); 64]> = chunk.drain(..)
+                .filter_map(|(meta, ctrl, resp, state)| {
+                    match ctrl {
+                        SignalControl::Stash(duration) => {
+                            self.stash.insert(meta, state, &duration);
+                            None
+                        },
+                        _ => Some((meta, ctrl, resp, state))
+                    }
+                })
+                .collect();
+            
+            self.work_buf.extend(processed_chunk);
         }
-        b   
+
+        &self.work_buf
     }
 
     #[inline]
@@ -101,12 +109,12 @@ where
 
     #[inline]
     pub fn mut_buffer<'a>(&'a mut self) -> &'a mut Vec<(CronMeta, S)> {
-        &mut self.job_buffer
+        &mut self.queued
     }
     
     #[inline]
     pub fn buffer<'a>(&'a self) -> &'a Vec<(CronMeta, S)> {
-        &self.job_buffer
+        &self.queued
     }
 }
 

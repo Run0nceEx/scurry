@@ -15,10 +15,15 @@ version = "0.2.22"
 features = ["parking_lot", "full"]
 
 [dependencies.serde]
-version = "1.0.39"
+version = "1.0"
 features = ["derive"]
 
+[dependencies.smallvec]
+version = "1.4"
+features = ["serde"]
+
 [dependencies]
+# In-use dependencies
 tracing = "0.1"
 tracing-subscriber = "0.2"
 pnet = "0.26"
@@ -27,6 +32,7 @@ evc = "0.1.2"
 rand = "0.7"
 cidr-utils = "0.5"
 structopt = "0.3"
-smallvec = "1.4"
-serde_json = "1"
+serde_json = "1.0"
+
+# Dependency conflict patches
 syn = "^1.0.33"

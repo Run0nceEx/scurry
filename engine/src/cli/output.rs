@@ -1,4 +1,4 @@
-use std::net::SocketAddr;
+use std::net::IpAddr;
 use serde::Serialize;
 
 #[derive(Debug, Eq, PartialEq, Hash, Copy, Clone, Serialize)]
@@ -8,9 +8,17 @@ enum Format {
 }
 
 impl Format {
-    pub fn fmt(&self, data: &OutputEntry) -> Result<String, super::error::Error> {
+    pub fn fmt(&self, data: &Host) -> Result<String, super::error::Error> {
         match self {
-            Format::Stdout => unimplemented!(),
+            Format::Stdout => {
+                let mut service_info = data.services
+                    .iter()
+                    .map(|s| format!("\t{}\t{}", s.port, s.state))
+                    .collect::<Vec<_>>()[..]
+                    .join("\n");
+                
+                Ok(format!("{}\n{}", data.addr, service_info))
+            },
             Format::Json => Ok(serde_json::to_string(data)?)
         }
     }
@@ -37,15 +45,18 @@ impl std::fmt::Display for State {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Hash, Copy, Clone, Serialize)]
+#[derive(Debug, Eq, PartialEq, Hash, Clone, Serialize)]
 pub struct Service {
     port: u16,
     state: State,
+    packet_protocol: String,
+    layer_protocol: String,
 }
 
-#[derive(Debug, Eq, PartialEq, Hash, Copy, Clone, Serialize)]
-pub struct OutputEntry<'a> {
-    addr: SocketAddr,
-    services: &'a [Service]
+#[derive(Debug, Eq, PartialEq, Hash, Clone, Serialize)]
+pub struct Host {
+    addr: IpAddr,
+    services: smallvec::SmallVec<[Service; 32]>
 }
+
 

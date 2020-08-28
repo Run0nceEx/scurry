@@ -3,8 +3,11 @@
 mod cli;
 mod libcore;
 
+use std::collections::HashMap;
+
 use crate::cli::input::parser::ScanMethod;
 use crate::cli::error::Error;
+
 
 use tracing::Level;
 use tracing_subscriber::FmtSubscriber;
@@ -27,8 +30,7 @@ fn setup_subscribers() {
 
 fn main() -> Result<(), Error> {
 	let opt = cli::args::Arguments::from_args();
-	
-	let mut results_buf = Vec::new();
+	let mut results_buf = HashMap::new();
 
 	let mut runtime: Runtime = Runtime::new()?;
 	return runtime.block_on(async move {
@@ -39,6 +41,6 @@ fn main() -> Result<(), Error> {
 			ScanMethod::Socks5 => cli::menu::socks_scan(unimplemented!().drain(), ).await
 		};
 
-		Ok(())	
+		Ok(())
 	});
 }

@@ -1,5 +1,8 @@
-use std::net::SocketAddr;
-use std::time::Duration;
+use std::{
+	net::{SocketAddr, IpAddr},
+	time::Duration,
+	collections::HashMap,
+};
 
 use crate::{
 	libcore::{
@@ -19,11 +22,11 @@ use crate::{
 	},
 };
 
-use super::output::OutputEntry;
+use smallvec::SmallVec;
 
 const TICK_NS: u64 = 500;
 
-pub async fn connect_scan<T>(generator: T, results: &mut Vec<OutputEntry<'_>>) 
+pub async fn connect_scan<T>(generator: T, results: &mut HashMap<IpAddr, SmallVec<[Service; 32]>>) 
 where 
 	T: Iterator<Item=SocketAddr>,
 {
@@ -37,7 +40,11 @@ where
 	
 	tracing::event!(target: "Main", tracing::Level::INFO, "Queued up [{}] jobs", pool.buffer().len());
 	
+	pool.buffer();
+
 	while pool.is_working() {
+		pool.buffer();
+		
         pool.tick().await;
         tokio::time::delay_for(Duration::from_nanos(TICK_NS)).await;
 	}
@@ -64,6 +71,17 @@ where
 	}
 }
 
+fn fd_throttle(leave_available: f32) -> usize {
+	let boundary = get_max_fd().unwrap();
+	//eprintln!("Setting throttle to {}", boundary);
+
+	match boundary {
+		Boundary::Limited(x) => (x as f32).powf(leave_available).round() as usize,
+		Boundary::Unlimited => 0
+	}
+}
+
+
 
 fn tokio_tcp_pool<J, R, S>() -> Pool<J, R, S>
 where
@@ -72,17 +90,10 @@ where
     S: Send + Sync + Clone + std::fmt::Debug + 'static,
 
 {
-    let throttle = {
-		let boundary = get_max_fd().unwrap();
-		eprintln!("Setting throttle to {}", boundary);
+	const EVEC_SIZE: usize = 16384;
+	const FD_AVAIL_PRECENT: f32 = 0.02;
 
-		match boundary {
-			Boundary::Limited(x) => x,
-			Boundary::Unlimited => 0
-		}
-	};
+	let throttle = fd_throttle(FD_AVAIL_PRECENT);
 	
-	let mut job_pool: CronPool<J, R, S> = CronPool::new(16*1024, throttle-100);
-    let mut pool = Pool::new(job_pool);
-    pool
+    Pool::new(CronPool::new(EVEC_SIZE, throttle))
 }

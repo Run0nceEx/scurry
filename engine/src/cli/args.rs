@@ -1,7 +1,7 @@
 use structopt::StructOpt;
-
 use super::input::parser::*;
 
+use crate::libcore::util::PortInput;
 
 #[derive(Debug, StructOpt)]
 #[structopt(about = "Port scanner")]

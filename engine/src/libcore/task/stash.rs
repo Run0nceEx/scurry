@@ -18,8 +18,8 @@ pub struct Stash<T> {
 }
 
 
-impl<T> Stash<T> 
-{
+impl<T> Stash<T> {
+
     #[inline]
     pub fn new() -> Self {
         Self {
@@ -46,6 +46,7 @@ impl<T> Stash<T>
         }
     }
 
+    #[inline]
     pub fn amount(&self) -> usize {
         self.timer.len()
     }
