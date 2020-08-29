@@ -30,16 +30,16 @@ fn setup_subscribers() {
 
 fn main() -> Result<(), Error> {
 	let opt = cli::args::Arguments::from_args();
-	let mut results_buf = HashMap::new();
+	//let mut results_buf = HashMap::new();
 
 	let mut runtime: Runtime = Runtime::new()?;
 	return runtime.block_on(async move {
 		setup_subscribers();
 		
-		match opt.method {
-			ScanMethod::Open => cli::menu::connect_scan(unimplemented!().drain(), &mut results_buf).await,
-			ScanMethod::Socks5 => cli::menu::socks_scan(unimplemented!().drain(), ).await
-		};
+		// match opt.method {
+		// 	ScanMethod::Open => cli::menu::connect_scan(unimplemented!().drain(), &mut results_buf).await,
+		// 	ScanMethod::Socks5 => cli::menu::socks_scan(unimplemented!().drain(), ).await
+		// };
 
 		Ok(())
 	});

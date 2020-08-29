@@ -19,7 +19,8 @@ use crate::{
 		},
 
 		util::{Boundary, get_max_fd},
-	},
+		model::Service
+	}
 };
 
 use smallvec::SmallVec;
@@ -44,7 +45,7 @@ where
 
 	while pool.is_working() {
 		pool.buffer();
-		
+
         pool.tick().await;
         tokio::time::delay_for(Duration::from_nanos(TICK_NS)).await;
 	}
@@ -92,8 +93,8 @@ where
 {
 	const EVEC_SIZE: usize = 16384;
 	const FD_AVAIL_PRECENT: f32 = 0.02;
-
-	let throttle = fd_throttle(FD_AVAIL_PRECENT);
 	
-    Pool::new(CronPool::new(EVEC_SIZE, throttle))
+    Pool::new(
+		CronPool::new(EVEC_SIZE, fd_throttle(FD_AVAIL_PRECENT))
+	)
 }

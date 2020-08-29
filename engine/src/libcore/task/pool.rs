@@ -1,7 +1,9 @@
 use super::{
-    CRON, SignalControl,
+    CRON,
     meta::CronMeta,
 };
+
+use super::sig::SignalControl;
 
 use tokio::{
     time::timeout,
@@ -53,8 +55,8 @@ where
 	R: Send + Sync + Clone,
     S: Send + Sync + Clone,
 {
-    tx: Arc<Mutex<evc::WriteHandle<EVec<(CronMeta, SignalControl, Option<R>, S)>>>>,
-    rx: evc::ReadHandle<EVec<(CronMeta, SignalControl, Option<R>, S)>>,
+    tx: Arc<Mutex<evc::WriteHandle<EVec<(CronMeta, SignalControl<R>, S)>>>>,
+    rx: evc::ReadHandle<EVec<(CronMeta, SignalControl<R>, S)>>,
     throttle: usize, // max amount of job_count()
 
 
@@ -124,7 +126,7 @@ where
 	R: Send + Sync + Clone + 'static,
     S: Send + Sync + Clone + 'static
 {
-    type Item = Vec<(CronMeta, SignalControl, Option<R>, S)>;
+    type Item = Vec<(CronMeta, SignalControl<R>, S)>;
     
     fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let mut lock = self.tx.lock().unwrap();
@@ -146,7 +148,7 @@ where
 
 
 fn spawn_worker<J, R, S>(
-    vtx: Arc<Mutex<evc::WriteHandle<EVec<(CronMeta, SignalControl, Option<R>, S)>>>>,
+    vtx: Arc<Mutex<evc::WriteHandle<EVec<(CronMeta, SignalControl<R>, S)>>>>,
     mut meta: CronMeta,
     mut state: S, 
 ) where 
@@ -159,12 +161,12 @@ fn spawn_worker<J, R, S>(
             tracing::event!(target: "Schedule Thread", tracing::Level::TRACE, "Firing job {}", meta.id);
             let now = std::time::Instant::now();
 
-            let (mut sig, resp) = match timeout(meta.ttl, J::exec(&mut state)).await {
-                Ok(Ok((sig, resp))) => (sig, resp),
+            let mut sig = match timeout(meta.ttl, J::exec(&mut state)).await {
+                Ok(Ok(sig)) => sig,
 
                 Err(_) | Ok(Err(_)) => {
                     tracing::event!(target: "Schedule Thread", tracing::Level::TRACE, "job timed-out {}", meta.id);
-                    (SignalControl::Retry, None)
+                    SignalControl::Retry
                 }
             };
 
@@ -181,7 +183,7 @@ fn spawn_worker<J, R, S>(
                 _ => {
                     tracing::event!(target: "Schedule Thread", tracing::Level::TRACE, "Completed job {}", meta.id);
                     let mut lock = vtx.lock().unwrap();
-                    lock.write(Operation::Push((meta, sig ,resp, state)));
+                    lock.write(Operation::Push((meta, sig, state)));
                     break;
                 }, 
             }

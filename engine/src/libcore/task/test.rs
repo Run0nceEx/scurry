@@ -13,7 +13,10 @@ use super::{
     SignalControl,
     CRON, meta::CronMeta
 };
-use crate::libcore::error::Error;
+use crate::libcore::{
+    error::Error,
+    model::State as NetState
+};
 
 use tokio::stream::{Stream, StreamExt};
 use std::time::Duration;
@@ -66,22 +69,12 @@ pub mod noop {
         type Response = R;
 
         /// Run function, and then append to parent if more jobs are needed
-        async fn exec(_state: &mut Self::State) -> Result<(SignalControl, Option<Self::Response>), Error> {
-            Ok((SignalControl::Success(false), Some(R::default())))
+        async fn exec(_state: &mut Self::State) -> Result<SignalControl<Self::Response>, Error> {
+            Ok(SignalControl::Success(NetState::Closed, R::default()))
         }
     }
 
-    // pub fn get_pool(timeout: f32, fire_in: f32, max_retries: usize) -> Pool {
-    //     let mut pool: Pool = Pool::new(POOLSIZE);
-    //     let buf = 
-    //     for _ in 0..JOB_CNT {
-    //         pool.insert(State, Duration::from_secs_f32(timeout), Duration::from_secs_f32(fire_in), max_retries);
-    //     }
-
-    //     pool
-    // }
 }
-
 
 #[bench]
 fn evpool_poll_noop_bench(b: &mut Bencher) {
@@ -133,8 +126,8 @@ fn evpool_poll_addition_bench(b: &mut Bencher) {
         type Response = usize;
 
         /// Run function, and then append to parent if more jobs are needed
-        async fn exec(state: &mut Self::State) -> Result<(SignalControl, Option<Self::Response>), Error> {
-            Ok((SignalControl::Success(false), Some((state.a as u32 + state.b as u32) as usize)))
+        async fn exec(state: &mut Self::State) -> Result<SignalControl<Self::Response>, Error> {
+            Ok(SignalControl::Success(NetState::Closed, (state.a as u32 + state.b as u32) as usize))
         }
     }
 
@@ -242,14 +235,14 @@ fn all_retry_now_once() {
         type State = usize;
         type Response = mock::Response;
 
-        async fn exec(state: &mut Self::State) -> Result<(SignalControl, Option<Self::Response>), Error> {            
+        async fn exec(state: &mut Self::State) -> Result<SignalControl<Self::Response>, Error> {            
             *state += 1;
 
             if *state > 1 {
-                Ok((SignalControl::Success(false), Some(mock::Response)))
+                Ok(SignalControl::Success(NetState::Closed, mock::Response))
             }
             else {
-                Ok((SignalControl::Retry, Some(mock::Response)))
+                Ok(SignalControl::Retry)
             }
             
         }
@@ -272,7 +265,7 @@ fn all_retry_now_once() {
         assert_eq!(buf.len(), 0);
         tokio::time::delay_for(std::time::Duration::from_secs(5)).await;
 
-        for (meta, ctrl, resp, state) in pool.next().await.unwrap() {
+        for (meta, ctrl, state) in pool.next().await.unwrap() {
             assert_eq!(meta.ctr, 2);
             assert_eq!(state, 2);
         }
@@ -294,9 +287,9 @@ fn all_timeout() {
         type State = mock::State;
         type Response = mock::Response;
 
-        async fn exec(_state: &mut Self::State) -> Result<(SignalControl, Option<Self::Response>), Error> {            
+        async fn exec(_state: &mut Self::State) -> Result<SignalControl<Self::Response>, Error> {            
             tokio::time::delay_for(Duration::from_secs(3)).await;
-            Ok((SignalControl::Success(false), Some(mock::Response)))
+            Ok(SignalControl::Success(NetState::Closed, mock::Response))
         }
     }
 

@@ -6,6 +6,7 @@ use super::{
 };
 use tokio::stream::StreamExt;
 use smallvec::SmallVec;
+use super::sig::SignalControl;
 
 /// Used in scheduler (Command run on)
 #[async_trait::async_trait]
@@ -14,23 +15,24 @@ pub trait CRON: std::fmt::Debug {
     type Response;
 
     /// Run function, and then append to parent if more jobs are needed
-    async fn exec(state: &mut Self::State) -> Result<(SignalControl, Option<Self::Response>), Error>;
+    async fn exec(state: &mut Self::State) -> Result<SignalControl<Self::Response>, Error>;
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub enum SignalControl {
-    /// Drop memory, and give a boolean to tell if we connected 
-    Success(bool), // Boolean to signify to the scheduler if we connected to the target or not
+
+// #[derive(Debug, Copy, Clone, Eq, PartialEq)]
+// pub enum SignalControl {
+//     /// Drop memory, and give a boolean to tell if we connected 
+//     Success(bool), // Boolean to signify to the scheduler if we connected to the target or not
     
-    /// Operations failed and would like to attemp again, 
-    /// it will sleep again for whatever it's time to sleep paramenter was set to. (tts)
-    Retry,
+//     /// Operations failed and would like to attemp again, 
+//     /// it will sleep again for whatever it's time to sleep paramenter was set to. (tts)
+//     Retry,
 
-    /// Operation was nullified either because of no result, or unreported error
-    Drop,
+//     /// Operation was nullified either because of no result, or unreported error
+//     Drop,
 
-    Stash(std::time::Duration)
-}
+//     Stash(std::time::Duration)
+// }
 
 
 pub struct Pool<J, R, S>
@@ -44,8 +46,7 @@ where
     timer: std::time::Instant,
     queued: Vec<(CronMeta, S)>,
     stash: Stash<S>,
-
-    work_buf: Vec<(CronMeta, SignalControl, Option<R>, S)>
+    work_buf: Vec<(CronMeta, SignalControl<R>, S)>
 }
 
 impl<J, R, S> Pool<J, R, S> 
@@ -61,12 +62,11 @@ where
             timer: std::time::Instant::now(),
             queued: Vec::new(),
             stash: Stash::new(),
-
             work_buf: Vec::new()
         }
     }
 
-    pub async fn tick<'a>(&'a mut self) -> &'a [(CronMeta, SignalControl, Option<R>, S)] {
+    pub async fn tick<'a>(&'a mut self) -> &'a [(CronMeta, SignalControl<R>, S)] {
         self.work_buf.clear();
         self.stash.release(&mut self.queued).await;
         
@@ -84,18 +84,17 @@ where
         }
 
         while let Some(mut chunk) = self.pool.next().await {
-            let processed_chunk: SmallVec<[(CronMeta, SignalControl, Option<R>, S); 64]> = chunk.drain(..)
-                .filter_map(|(meta, ctrl, resp, state)| {
+            let processed_chunk: SmallVec<[(CronMeta, SignalControl<R>, S); 64]> = chunk.drain(..)
+                .filter_map(|(meta, ctrl, state)| {
                     match ctrl {
                         SignalControl::Stash(duration) => {
                             self.stash.insert(meta, state, &duration);
                             None
                         },
-                        _ => Some((meta, ctrl, resp, state))
+                        _ => Some((meta, ctrl, state))
                     }
                 })
                 .collect();
-            
             self.work_buf.extend(processed_chunk);
         }
 

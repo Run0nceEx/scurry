@@ -1,4 +1,6 @@
 use tokio::time::Error as TimeError;
+use std::io::ErrorKind;
+use serde::ser::SerializeStructVariant;
 
 #[derive(Debug)]
 pub enum Error {
@@ -25,5 +27,42 @@ impl std::fmt::Display for Error {
         write!(f, "{:?}", self)
     }
 }
+
+use serde::{Serialize, Serializer, ser::SerializeStruct};
+
+impl Serialize for Error {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        // 3 is the number of fields in the struct.
+        match self {
+            Error::IO(e) => {
+                match e.kind() {
+                    ErrorKind::Other => {
+                        e.raw_os_error();
+                        
+                        let mut sv = serializer.serialize_struct_variant("Error", 0, "IO", 1)?;
+
+                        //state.serialize_struct_variant("Error", &self.r)?;
+
+                        sv.end();
+
+                        unimplemented!()
+                    }
+                    _ => unimplemented!()
+                }
+            }
+            _ => unimplemented!()
+        }
+        
+        // state.serialize_field("r", &self.r)?;
+        // state.serialize_field("g", &self.g)?;
+        // state.serialize_field("b", &self.b)?;
+        
+        //state.end()
+    }
+}
+
 
 impl std::error::Error for Error {}

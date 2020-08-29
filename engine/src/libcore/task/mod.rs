@@ -6,9 +6,12 @@ pub use pool::*;
 
 pub mod stash;
 
+mod sig;
 
 mod core;
-pub use super::task::core::{CRON, SignalControl, Pool};
+
+pub use sig::SignalControl;
+pub use super::task::core::{CRON, Pool};
 
 #[cfg(test)]
 mod test;

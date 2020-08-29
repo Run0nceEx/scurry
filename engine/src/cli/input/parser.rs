@@ -3,7 +3,7 @@ use std::{
     path::{PathBuf, Path}
 };
 
-use crate::libcore::util::PortInput;
+use crate::libcore::model::PortInput;
 use cidr_utils::cidr::IpCidr;
 use crate::cli::error::Error;
 

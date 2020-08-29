@@ -1,6 +1,7 @@
 use crate::libcore::{
     task::{SignalControl, CRON},
     error::Error,
+    model::State
 };
 
 use tokio::io::{AsyncWriteExt, AsyncReadExt};
@@ -31,16 +32,16 @@ impl CRON for Socks5Scanner {
     type State = SocketAddr;
     type Response = ScanResult;
 
-    async fn exec(addr: &mut SocketAddr) -> Result<(SignalControl, Option<Self::Response>), Error>
+    async fn exec(addr: &mut SocketAddr) -> Result<SignalControl<Self::Response>, Error>
     {
         match scan(*addr).await {
-            Ok(method) => return Ok((SignalControl::Success(true), Some(method))),
+            Ok(method) => return Ok(SignalControl::Success(State::Open, method)),
 
             Err(Error::IO(x)) => return Ok(super::handle_io_error(x, ScanResult::Other(*addr))),
 
             Err(e) => {
                 tracing::event!(target: "Schedule Thread", tracing::Level::WARN, "unmatched {:#?} [not io error]", e);
-                return Ok((SignalControl::Retry, None))
+                return Ok(SignalControl::Retry)
             }
         }
     }
