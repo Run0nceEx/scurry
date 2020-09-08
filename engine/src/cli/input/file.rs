@@ -13,7 +13,7 @@ impl InputFile {
 	pub fn open<T>(path: T) -> Result<Self, Error> where T: AsRef<std::path::Path> {
 		Ok(Self {	
 			reader: BufReader::new(File::open(path)?),
-			line: String::new(),			
+			line: String::new(),	
 		})
 	}
 }

@@ -1,44 +1,52 @@
 use std::{
-    net::{IpAddr},
+    net::{IpAddr, SocketAddr},
     path::{PathBuf, Path}
 };
 
-use crate::libcore::model::PortInput;
+use serde::Serialize;
+use crate::libcore::model::{PortInput, Host};
 use cidr_utils::cidr::IpCidr;
 use crate::cli::error::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum AddressInput {
+    Pair(SocketAddr),
     Singleton(IpAddr),
     CIDR(IpCidr),
-    File(PathBuf)
+    File(PathBuf),
 }
+
 
 pub fn address_parser(src: &str) -> Result<AddressInput, Error> {    
     if Path::new(src).exists() {
+        // File
         return Ok(AddressInput::File(PathBuf::from(src)))
     }
     
     else if src.contains("/") {
+        //cidr
         return Ok(AddressInput::CIDR(IpCidr::from_str(src)?))
     }
-    
-    else if (src.contains(".") && src.matches('.').count() == 4)
-         || (src.contains(":") && src.matches(':').count() > 1)
-    {
-        return Ok(AddressInput::Singleton(src.parse()?))
-    }
 
-    Err(Error::CliError("unrecognized ip address format".to_string()))
+    else {
+        // IpAddr
+        match src.parse() {
+            // IpAddr
+            Ok(x) => Ok(AddressInput::Singleton(x)),
+            // SocketAddr
+            Err(_) => Ok(AddressInput::Pair(src.parse()?))
+        }
+    }
 }
 
 
-impl std::convert::TryFrom<&str> for PortInput {
-    type Error = Error;
+
+impl std::str::FromStr for PortInput {
+    type Err = Error;
 
     /// Accepts '80-443', '80', '0-10'
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        port_parser(value)
+    fn from_str(src: &str) -> Result<Self, Self::Err> {
+        port_parser(src)
     }
 }
 
@@ -63,20 +71,48 @@ pub fn port_parser(src: &str) -> Result<PortInput, Error> {
 }
 
 
+
+
+impl std::str::FromStr for ScanMethod {
+    type Err = Error;
+
+    fn from_str(src: &str) -> Result<ScanMethod, Self::Err> {
+        let opt = match src {
+            "open" => ScanMethod::Open,
+            "socks5" => ScanMethod::Socks5,
+            _ => return Err(Error::CliError("unrecognized scan method".to_string()))
+        };
+
+        Ok(opt)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ScanMethod {
     Open,
     Socks5,
 }
 
-pub fn method_parser(src: &str) -> Result<ScanMethod, Error> {    
-    match src {
-        "open" => Ok(ScanMethod::Open),
-        "socks5" => Ok(ScanMethod::Socks5),
-        _ => Err(Error::CliError("unrecognized scan method".to_string()))
-    }
+#[derive(Debug, Eq, PartialEq, Hash, Copy, Clone, Serialize)]
+pub enum Format {
+    Stdout,
+    Json,
+    Stream
 }
 
+impl std::str::FromStr for Format {
+    type Err = Error;
+    
+    fn from_str(x: &str) -> Result<Format, Self::Err> {
+        let r = match x {
+            "json" => Format::Json,
+            "stream" => Format::Stream,
+            "default" => Format::Stdout,
+            _ => return Err(Error::CliError("Unknown format".to_string()))
+        };
+        Ok(r)
+    }
+}
 
 
 // #[test]

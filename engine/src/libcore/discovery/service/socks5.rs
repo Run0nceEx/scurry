@@ -4,8 +4,11 @@ use crate::libcore::{
     model::State
 };
 
-use tokio::io::{AsyncWriteExt, AsyncReadExt};
-use tokio::net::TcpStream;
+use tokio::{
+    io::{AsyncWriteExt, AsyncReadExt},
+    net::TcpStream
+};
+
 use std::net::SocketAddr;
 
 #[derive(Debug, Clone)]
@@ -22,7 +25,6 @@ pub enum AuthMethod {
     NoAcceptableMethods, // cock blocked
     Other(u8)
 }
-
 
 #[derive(Debug)]
 pub struct Socks5Scanner;

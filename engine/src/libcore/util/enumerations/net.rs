@@ -28,6 +28,8 @@ const HOSTLIST: &'static [&'static str] = &[
 /// Checks if we're connected by some hosts
 pub async fn www_available() -> bool {
     for host in HOSTLIST {
+
+        
         match TcpStream::connect(format!("{}:53", host)).await {
             Ok(_) => return true,
             Err(e) => eprintln!("{}", e)

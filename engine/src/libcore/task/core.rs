@@ -18,22 +18,7 @@ pub trait CRON: std::fmt::Debug {
     async fn exec(state: &mut Self::State) -> Result<SignalControl<Self::Response>, Error>;
 }
 
-
-// #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-// pub enum SignalControl {
-//     /// Drop memory, and give a boolean to tell if we connected 
-//     Success(bool), // Boolean to signify to the scheduler if we connected to the target or not
-    
-//     /// Operations failed and would like to attemp again, 
-//     /// it will sleep again for whatever it's time to sleep paramenter was set to. (tts)
-//     Retry,
-
-//     /// Operation was nullified either because of no result, or unreported error
-//     Drop,
-
-//     Stash(std::time::Duration)
-// }
-
+pub type WorkBuf<R, S> = SmallVec<[(CronMeta, SignalControl<R>, S); 64]>;
 
 pub struct Pool<J, R, S>
 where
@@ -46,7 +31,6 @@ where
     timer: std::time::Instant,
     queued: Vec<(CronMeta, S)>,
     stash: Stash<S>,
-    work_buf: Vec<(CronMeta, SignalControl<R>, S)>
 }
 
 impl<J, R, S> Pool<J, R, S> 
@@ -62,12 +46,10 @@ where
             timer: std::time::Instant::now(),
             queued: Vec::new(),
             stash: Stash::new(),
-            work_buf: Vec::new()
         }
     }
 
-    pub async fn tick<'a>(&'a mut self) -> &'a [(CronMeta, SignalControl<R>, S)] {
-        self.work_buf.clear();
+    pub async fn tick(&mut self) -> WorkBuf<R, S> {
         self.stash.release(&mut self.queued).await;
         
 		if self.queued.len() > 0 {
@@ -83,8 +65,10 @@ where
 			self.timer = std::time::Instant::now();
         }
 
+        let mut ret_buf: WorkBuf<R, S> = SmallVec::new();
+
         while let Some(mut chunk) = self.pool.next().await {
-            let processed_chunk: SmallVec<[(CronMeta, SignalControl<R>, S); 64]> = chunk.drain(..)
+            ret_buf.extend(chunk.drain(..)
                 .filter_map(|(meta, ctrl, state)| {
                     match ctrl {
                         SignalControl::Stash(duration) => {
@@ -94,11 +78,10 @@ where
                         _ => Some((meta, ctrl, state))
                     }
                 })
-                .collect();
-            self.work_buf.extend(processed_chunk);
+            );
         }
 
-        &self.work_buf
+        ret_buf
     }
 
     #[inline]

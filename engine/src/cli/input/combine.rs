@@ -94,15 +94,15 @@ impl<'a> Iterator for CidrPortCombinator<'a> {
 mod test {
 	use super::*;
     use std::collections::HashSet;
-    use std::convert::TryFrom;
+    use std::str::FromStr;
 
     #[test]
 	fn does_not_duplicate() {
         let ports = &[
-            PortInput::try_from("1").unwrap(),
-            PortInput::try_from("2").unwrap(),
-            PortInput::try_from("3").unwrap(),
-            PortInput::try_from("5-80").unwrap(),
+            PortInput::from_str("1").unwrap(),
+            PortInput::from_str("2").unwrap(),
+			PortInput::from_str("3").unwrap(),
+            PortInput::from_str("5-80").unwrap(),
         ];
         
         let data: Vec<SocketAddr> = CidrPortCombinator::new(

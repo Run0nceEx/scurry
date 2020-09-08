@@ -11,7 +11,7 @@ mod sig;
 mod core;
 
 pub use sig::SignalControl;
-pub use super::task::core::{CRON, Pool};
+pub use super::task::core::{CRON, Pool, WorkBuf};
 
 #[cfg(test)]
 mod test;
