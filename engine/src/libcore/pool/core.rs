@@ -4,7 +4,7 @@ use super::{
     stash::Stash,
     pool::CronPool
 };
-use tokio::stream::StreamExt;
+use tokio::stream::{StreamExt, Stream};
 use smallvec::SmallVec;
 use super::sig::SignalControl;
 
@@ -22,8 +22,11 @@ pub type WorkBuf<R, S> = SmallVec<[(CronMeta, SignalControl<R>, S); 64]>;
 
 pub struct Pool<J, R, S>
 where
-	J: CRON<Response = R, State = S>,
-	R: Send + Sync + Clone + std::fmt::Debug,
+    J: CRON<Response = R, State = S>,
+    
+    // Stream<Item=&WorkBuf<R, S>>
+    
+    R: Send + Sync + Clone + std::fmt::Debug,
     S: Send + Sync + Clone + std::fmt::Debug,
 
 {
@@ -31,6 +34,7 @@ where
     timer: std::time::Instant,
     queued: Vec<(CronMeta, S)>,
     stash: Stash<S>,
+
 }
 
 impl<J, R, S> Pool<J, R, S> 

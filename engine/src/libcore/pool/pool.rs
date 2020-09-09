@@ -49,6 +49,28 @@ impl<T> OperationCache for EVec<T> where T: Clone {
 }
 
 
+pub struct sas<J, R, S>
+where
+	J: CRON<Response = R, State = S>,
+	R: Send + Sync + Clone,
+    S: Send + Sync + Clone,
+{
+    tx: Arc<Mutex<evc::WriteHandle<EVec<(CronMeta, SignalControl<R>, S)>>>>,
+    rx: evc::ReadHandle<EVec<(CronMeta, SignalControl<R>, S)>>,
+    throttle: usize, // max amount of job_count()
+
+
+    _job: std::marker::PhantomData<J>,
+}
+
+
+// decouple tx,rx as their own datatype `EventualVec`
+// decouple cronpool from signal control to make it a pure `Stream/Iterator`
+// define cron pool as rather a large job_spawn pool as core::pool now handles stashing
+// make core::pool accept Stream<Item=T> And be Cronpool functions mapped together 
+// move throttle and signal control to core::pool
+// try to remove as much book keeping from the pure iterators as possible
+
 pub struct CronPool<J, R, S>
 where
 	J: CRON<Response = R, State = S>,
@@ -134,10 +156,10 @@ where
 
         let jobs = &self.rx.read().0;
         if jobs.len() > 0 {
-            lock.write(Operation::Clear);
             // this is safe because operations
             // aren't reflected until `lock.refresh()`
             // is executed
+            lock.write(Operation::Clear);
             return Poll::Ready(Some(jobs.clone()));
         }
         else {
