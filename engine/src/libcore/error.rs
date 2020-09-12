@@ -1,6 +1,7 @@
 use tokio::time::Error as TimeError;
-use std::io::ErrorKind;
+use std::io::ErrorKind as IoKind;
 use serde::ser::SerializeStructVariant;
+
 
 #[derive(Debug)]
 pub enum Error {
@@ -39,7 +40,7 @@ impl Serialize for Error {
         match self {
             Error::IO(e) => {
                 match e.kind() {
-                    ErrorKind::Other => {
+                    IoKind::Other => {
                         e.raw_os_error();
                         
                         let mut sv = serializer.serialize_struct_variant("Error", 0, "IO", 1)?;

@@ -107,7 +107,8 @@ impl std::str::FromStr for Format {
         let r = match x {
             "json" => Format::Json,
             "stream" => Format::Stream,
-            "default" => Format::Stdout,
+            "stdout" | "default" => Format::Stdout,
+            
             _ => return Err(Error::CliError("Unknown format".to_string()))
         };
         Ok(r)

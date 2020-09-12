@@ -1,9 +1,6 @@
 use super::{
-    CRON,
-    meta::CronMeta,
+    core::CRON
 };
-
-use super::sig::SignalControl;
 
 use tokio::{
     time::timeout,
@@ -11,6 +8,7 @@ use tokio::{
 };
 
 use evc::OperationCache;
+use crate::libcore::model::State as NetState;
 
 use std::sync::{Arc, Mutex};
 use std::task::{Poll, Context};
@@ -48,55 +46,49 @@ impl<T> OperationCache for EVec<T> where T: Clone {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum JobErr {
+    IO(std::io::ErrorKind),
+    Errno(i32),
+    TaskFailed,
+    Other
+}
 
-pub struct sas<J, R, S>
+
+#[derive(Debug, Clone)]
+pub enum JobCtrl<R> {
+    Return(NetState, R),
+    Error(JobErr),
+}
+
+pub struct Worker<J, R, S>
 where
 	J: CRON<Response = R, State = S>,
 	R: Send + Sync + Clone,
     S: Send + Sync + Clone,
 {
-    tx: Arc<Mutex<evc::WriteHandle<EVec<(CronMeta, SignalControl<R>, S)>>>>,
-    rx: evc::ReadHandle<EVec<(CronMeta, SignalControl<R>, S)>>,
+    tx: Arc<Mutex<evc::WriteHandle<EVec<(JobCtrl<R>, S)>>>>,
+    rx: evc::ReadHandle<EVec<(JobCtrl<R>, S)>>,
+
+    ttl: std::time::Duration, // time to live for each job
+    
     throttle: usize, // max amount of job_count()
-
-
     _job: std::marker::PhantomData<J>,
 }
 
-
-// decouple tx,rx as their own datatype `EventualVec`
-// decouple cronpool from signal control to make it a pure `Stream/Iterator`
-// define cron pool as rather a large job_spawn pool as core::pool now handles stashing
-// make core::pool accept Stream<Item=T> And be Cronpool functions mapped together 
-// move throttle and signal control to core::pool
-// try to remove as much book keeping from the pure iterators as possible
-
-pub struct CronPool<J, R, S>
-where
-	J: CRON<Response = R, State = S>,
-	R: Send + Sync + Clone,
-    S: Send + Sync + Clone,
-{
-    tx: Arc<Mutex<evc::WriteHandle<EVec<(CronMeta, SignalControl<R>, S)>>>>,
-    rx: evc::ReadHandle<EVec<(CronMeta, SignalControl<R>, S)>>,
-    throttle: usize, // max amount of job_count()
-
-
-    _job: std::marker::PhantomData<J>,
-}
-
-impl<J, R, S> CronPool<J, R, S>
+impl<J, R, S> Worker<J, R, S>
 where
 	J: CRON<Response = R, State = S>,
 	R: Send + Sync + 'static + std::fmt::Debug + Clone,
 	S: Send + Sync + 'static + std::fmt::Debug + Clone
 {
-	pub fn new(channel_size: usize, throttle: usize) -> Self {		
+	pub fn new(channel_size: usize, throttle: usize, ttl: std::time::Duration) -> Self {		
         let (tx, rx) = evc::new(EVec::with_compacity(channel_size));
 
         let instance = Self {
             throttle,
             rx,
+            ttl,
             tx: Arc::new(Mutex::new(tx)),
             _job: std::marker::PhantomData
         };
@@ -109,7 +101,7 @@ where
         std::sync::Arc::strong_count(&self.tx)
     }
     
-    pub fn fire_jobs(&mut self, rescheduled_buf: &mut Vec<(CronMeta, S)>)
+    pub fn fire_jobs(&mut self, rescheduled_buf: &mut Vec<S>)
     where
         J: CRON<Response = R, State = S>,
         R: Send + Sync + 'static + std::fmt::Debug + Clone,
@@ -135,20 +127,20 @@ where
             }
         };
 
-        for (meta, state) in rescheduled_buf.drain(..top) {
-            spawn_worker::<J, R, S>(self.tx.clone(), meta, state)
+        for state in rescheduled_buf.drain(..top) {
+            spawn_worker::<J, R, S>(self.tx.clone(), state, self.ttl)
         }
     }
 }
 
 
-impl<J, R, S> Stream for CronPool<J, R, S> 
+impl<J, R, S> Stream for Worker<J, R, S> 
 where
 	J: CRON<Response = R, State = S>,
 	R: Send + Sync + Clone + 'static,
     S: Send + Sync + Clone + 'static
 {
-    type Item = Vec<(CronMeta, SignalControl<R>, S)>;
+    type Item = Vec<(JobCtrl<R>, S)>;
     
     fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let mut lock = self.tx.lock().unwrap();
@@ -170,45 +162,31 @@ where
 
 
 fn spawn_worker<J, R, S>(
-    vtx: Arc<Mutex<evc::WriteHandle<EVec<(CronMeta, SignalControl<R>, S)>>>>,
-    mut meta: CronMeta,
-    mut state: S, 
+    vtx: Arc<Mutex<evc::WriteHandle<EVec<(JobCtrl<R>, S)>>>>,
+    mut state: S,
+    ttl: std::time::Duration
 ) where 
     J: CRON<Response=R, State=S>,
     R: Send + Sync + 'static + Clone,
     S: Send + Sync + 'static + Clone
 {
     tokio::spawn(async move {
-        loop {
-            tracing::event!(target: "Schedule Thread", tracing::Level::TRACE, "Firing job {}", meta.id);
-            let now = std::time::Instant::now();
+        tracing::event!(target: "Schedule Thread", tracing::Level::TRACE, "Firing job");
+        let now = std::time::Instant::now();
 
-            let mut sig = match timeout(meta.ttl, J::exec(&mut state)).await {
-                Ok(Ok(sig)) => sig,
-
-                Err(_) | Ok(Err(_)) => {
-                    tracing::event!(target: "Schedule Thread", tracing::Level::TRACE, "job timed-out {}", meta.id);
-                    SignalControl::Retry
-                }
-            };
-
-            //meta.record_elapsed(now);
+        let mut sig = match timeout(ttl, J::exec(&mut state)).await {
+            Ok(Ok(sig)) => sig,
+            Err(_) => JobCtrl::Error(JobErr::IO(std::io::ErrorKind::TimedOut)),
             
-            if meta.ctr >= meta.max_ctr {
-                sig = SignalControl::Drop; 
+            Ok(Err(err)) => {
+                tracing::event!(target: "Schedule Thread", tracing::Level::TRACE, "Error has occured {}", err);
+                JobCtrl::Error(JobErr::TaskFailed)
             }
+        };
 
-            meta.ctr += 1;
-
-            match sig {
-                SignalControl::Retry => {},
-                _ => {
-                    tracing::event!(target: "Schedule Thread", tracing::Level::TRACE, "Completed job {}", meta.id);
-                    let mut lock = vtx.lock().unwrap();
-                    lock.write(Operation::Push((meta, sig, state)));
-                    break;
-                }, 
-            }
-        }
+        tracing::event!(target: "Schedule Thread", tracing::Level::TRACE, "Completed job");
+        let mut lock = vtx.lock().unwrap();
+        lock.write(Operation::Push((sig, state)));
+        
     });
 }

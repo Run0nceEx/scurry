@@ -21,17 +21,42 @@ use cli::{
 		file::InputFile
 	}
 };
+use libcore::model::PortInput;
 
 fn setup_subscribers() {
 	let subscriber = FmtSubscriber::builder()
 		// all spans/events with a level higher than TRACE (e.g, debug, info, warn, etc.)
 		// will be written to stdout.
-		.with_max_level(Level::DEBUG)
+		.with_max_level(Level::TRACE)
 		// completes the builder.
 		.finish();
 	
 	tracing::subscriber::set_global_default(subscriber)
         .expect("setting default subscriber failed");
+}
+
+
+
+fn make_generator<'a>(targets: &'a [AddressInput], ports: &'a [PortInput]) -> Box<dyn Iterator<Item=SocketAddr> + 'a> {
+	//this hack did not work
+	
+	let mut generators: Box<dyn Iterator<Item=SocketAddr>> = Box::new(Vec::new().into_iter());
+	
+	let mut singles = Vec::new();
+	
+	for entry in targets {
+		match entry {
+			AddressInput::CIDR(rng) => 
+				generators = Box::new(generators.chain(CidrPortCombinator::new(&rng, &ports))),	
+			AddressInput::Singleton(singleton) =>
+				generators = Box::new(generators.chain(IpAddrPortCombinator::new(singleton.clone(), &ports))),
+			
+			AddressInput::Pair(socket) => singles.push(socket), 
+			AddressInput::File(_name) => unimplemented!()
+		}
+	}
+	generators = Box::new(generators.chain(singles.into_iter().map(|x| *x)));
+	generators
 }
 
 
@@ -41,35 +66,21 @@ fn main() -> Result<(), Error> {
 
 	let mut runtime: Runtime = Runtime::new()?;
 
+	let mut output_type: cli::menu::Output = opt.format.clone().into();	
+
 	return runtime.block_on(async move {
 		setup_subscribers();
+		
+		let generator = make_generator(&opt.target, &opt.ports);
+		
+		println!("targets: {:?}", &opt.target);
 
-		let mut singles = Vec::new();
-		let mut generators: Box<dyn Iterator<Item=SocketAddr>> = Box::new(Vec::new().into_iter());
-		
-		let mut output_type: cli::menu::Output = opt.format.clone().into();
-		
-		for entry in opt.target {
-			match entry {
-				AddressInput::File(name) => unimplemented!(), //*x = Box::new(x.chain(InputFile::open(name)?)),
-				
-				AddressInput::CIDR(rng) => 
-					generators = Box::new(generators.chain(CidrPortCombinator::new(&rng, &opt.ports))),
-				
-				AddressInput::Singleton(singleton) =>
-					generators = Box::new(generators.chain(IpAddrPortCombinator::new(singleton, &opt.ports))),
-				
-				AddressInput::Pair(socket) => singles.push(socket) 
-				// generators = Box::new(generators.chain([socket].iter().map(|x| *x)))
-			}
-		}
-		generators = Box::new(generators.chain(singles.into_iter()));
-		
+
 		match opt.method {
-		 	ScanMethod::Open => cli::menu::connect_scan(generators, &mut output_type).await,
-			_ => {} 
-			 //ScanMethod::Socks5 => cli::menu::socks_scan(generators, &mut output_type).await
+		 	ScanMethod::Open => cli::menu::connect_scan(generator, &mut output_type).await,
+			ScanMethod::Socks5 => unimplemented!() // cli::menu::socks_scan(generators, &mut output_type).await
 		};
+		println!("{:?}", output_type);
 
 		if let Output::Map(map) = output_type {
 			match opt.format {
@@ -81,10 +92,8 @@ fn main() -> Result<(), Error> {
 				
 				Format::Stream => unreachable!() 
 			}
-			
 		}
-		//output_type.finish();
-
+		
 		Ok(())
 	});
 }

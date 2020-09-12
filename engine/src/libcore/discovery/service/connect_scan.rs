@@ -1,12 +1,15 @@
 use crate::libcore::{
-    pool::{SignalControl, CRON},
+    pool::{JobCtrl, CRON, JobErr},
     error::Error,
     model::State,
 };
 
 use tokio::net::TcpStream;
 use std::{net::SocketAddr};
-use super::util::handle_io_error;
+use super::handle_io_error;
+
+
+
 
 #[derive(Debug)]
 pub struct OpenPortJob;
@@ -17,15 +20,15 @@ impl CRON for OpenPortJob
     type State = SocketAddr;
     type Response = SocketAddr;
 
-    async fn exec(state: &mut SocketAddr) -> Result<SignalControl<Self::Response>, Error>
+    async fn exec(state: &mut SocketAddr) -> Result<JobCtrl<Self::Response>, Error>
     {
         match scan(*state).await {
-            Ok(_) => Ok(SignalControl::Success(State::Open, *state)),
-            Err(Error::IO(x)) => Ok(handle_io_error(x, *state)),
-            
+            Ok(_) => Ok(JobCtrl::Return(State::Open, *state)),
+
+            Err(Error::IO(err)) => Ok(JobCtrl::Error(handle_io_error(err))),
             Err(e) => {
-                tracing::event!(target: "Schedule Thread", tracing::Level::WARN, "unmatched {:#?} [not io error]", e);
-                return Ok(SignalControl::Retry)
+                eprintln!("unmatched error {:#?} [not io error]", e);
+                Ok(JobCtrl::Error(JobErr::Other))
             }
         }
     }

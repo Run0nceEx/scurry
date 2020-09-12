@@ -3,20 +3,15 @@ use std::{
     time::Duration,
 };
 
-use super::{
-    meta::CronMeta
-};
-
 use tokio::{
     time::DelayQueue,
     stream::StreamExt
 };
 
 pub struct Stash<T> {
-    stash: HashMap<uuid::Uuid, (CronMeta, T)>,
-    timer: DelayQueue<uuid::Uuid>
+    stash: HashMap<usize, T>,
+    timer: DelayQueue<usize>
 }
-
 
 impl<T> Stash<T> {
 
@@ -29,19 +24,24 @@ impl<T> Stash<T> {
     }
 
     #[inline]
-    pub fn insert(&mut self, meta: CronMeta, state: T, delay_for: &Duration) {
+    pub fn insert(&mut self, state: T, delay_for: &Duration) {
         // ignoring key bc we dont transverse `self.pending` to remove items from
         // `self.timer`
-        let _key = self.timer.insert(meta.id, *delay_for);
-        self.stash.insert(meta.id, (meta, state));
+        let mut key: usize = rand::random();
+        while let Some(_) = self.stash.get(&key) {
+            key = rand::random();
+        }
+        
+        let _key = self.timer.insert(key, *delay_for);
+        self.stash.insert(key, state);
     }
 
     /// Release tasks from Timer
     #[inline]
-    pub async fn release(&mut self, jobs: &mut Vec<(CronMeta, T)>) {
+    pub async fn release(&mut self, jobs: &mut Vec<T>) {
         while let Some(Ok(res)) = self.timer.next().await {
-            if let Some((meta, state)) = self.stash.remove(res.get_ref()) {
-                jobs.push((meta, state));
+            if let Some(state) = self.stash.remove(res.get_ref()) {
+                jobs.push(state);
             }
         }
     }

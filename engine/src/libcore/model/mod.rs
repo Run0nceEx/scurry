@@ -5,7 +5,7 @@ use std::net::IpAddr;
 pub enum State {
     Closed,
     Filtered,
-    Open
+    Open,
 }
 
 impl std::fmt::Display for State {
@@ -22,7 +22,7 @@ impl std::fmt::Display for State {
 }
 
 
-#[derive(Debug, Eq, PartialEq, Hash, Clone, Serialize)]
+#[derive(Debug, Eq, PartialEq, Hash, Clone, Copy, Serialize)]
 pub struct Service {
     pub port: u16,
     pub state: State,
