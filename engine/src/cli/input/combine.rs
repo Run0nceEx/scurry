@@ -15,7 +15,7 @@ struct Feeder<'a> {
 }
 
 impl<'a> Feeder<'a> {
-	pub fn new(ports: &'a [PortInput]) -> Self {
+	pub fn new(ports: &'a [PortInput], ) -> Self {
 		Self {
 			ports,
 			items: Vec::new(),
@@ -62,7 +62,7 @@ impl<'a> Feeder<'a> {
 
 
 pub struct IpAddrPortCombinator<'a> {
-	inner: IpAddr,
+	ip: IpAddr,
 	ports: &'a [PortInput],
 	current_port_range: Option<std::ops::Range<u16>>,
 	i: usize
@@ -71,8 +71,8 @@ pub struct IpAddrPortCombinator<'a> {
 impl<'a> IpAddrPortCombinator<'a> {
 	pub fn new(ip: IpAddr, ports: &'a [PortInput]) -> Self {
 		Self {
-			ports: ports,
-			inner: ip,
+			ip,
+			ports,
 			current_port_range: None,
 			i: 0
 		}
@@ -85,27 +85,28 @@ impl<'a> Iterator for IpAddrPortCombinator<'a> {
 	fn next(&mut self) -> Option<Self::Item> {
 		if let Some(rng) = &mut self.current_port_range {
 			if let Some(port) = rng.next() {
-				return Some(SocketAddr::new(self.inner, port))
+				return Some(SocketAddr::new(self.ip, port))
 			}
 			else {
 				self.current_port_range = None;
 			}
 		}
-
-		if self.i >= self.ports.len()-1 {
+		
+		if self.i > self.ports.len()-1 {
 			return None
 		}
 
         let port = &self.ports[self.i];
         
 		let addr = match port {
-			PortInput::Singleton(port) => SocketAddr::new(self.inner, *port),
+			PortInput::Singleton(port) => SocketAddr::new(self.ip, *port),
 			PortInput::Range(rng) => {
 				let mut rng = rng.clone();
+				
 				let port = rng.next().unwrap();
 				self.current_port_range = Some(rng);
-
-				SocketAddr::new(self.inner, port)
+				
+				SocketAddr::new(self.ip, port)
 			}
 		};
 		
@@ -152,27 +153,75 @@ impl<'a> Iterator for CidrPortCombinator<'a> {
 #[cfg(test)]
 mod test {
 	use super::*;
-    use std::collections::HashSet;
+	use std::net::Ipv4Addr;
     use std::str::FromStr;
 
-    #[test]
-	fn does_not_duplicate() {
-        let ports = &[
-            PortInput::from_str("1").unwrap(),
-            PortInput::from_str("2").unwrap(),
-			PortInput::from_str("3").unwrap(),
-            PortInput::from_str("5-80").unwrap(),
-        ];
-        
-        let data: Vec<SocketAddr> = CidrPortCombinator::new(
-            &IpCidr::from_str("127.0.0.1/24").unwrap(),
-            ports
-        ).collect();
-        
-        let mut copy_data: HashSet<SocketAddr> = HashSet::new();
-        copy_data.extend(data.iter().map(|x| *x));
+	#[test]
+	fn ip_generates_one() {
+        let ports = &[PortInput::from_str("1").unwrap()];
 
-        let check: Vec<SocketAddr> = copy_data.drain().collect();
-        assert_eq!(check, data);
-    }
+		let data = IpAddrPortCombinator::new(
+			"127.0.0.1".parse().unwrap(), 
+			ports
+		).next();
+
+		assert_eq!(data, Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127,0,0,1)), 1)));
+
+	}
+
+    #[test]
+	fn ip_generates_many() {
+        let ports = &[PortInput::from_str("1-5").unwrap()];
+
+		println!("PORTS: {:?}", ports);
+        let data: Vec<SocketAddr> = IpAddrPortCombinator::new(
+			"127.0.0.1".parse().unwrap(), 
+			ports
+		).collect();
+        
+		println!("SOCKETS: {:?}", data);
+		for i in 1..5 {
+			assert!(data.contains(
+				&SocketAddr::new(
+					IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+					i
+				)
+			))
+		}
+	}
+	
+	#[test]
+	fn cidr_generates_many() {
+		let ports = &[PortInput::from_str("1").unwrap()];
+
+		println!("PORTS: {:?}", ports);
+        let data: Vec<SocketAddr> = CidrPortCombinator::new(
+			&IpCidr::from_str("127.0.0.1/30").unwrap(),
+			ports
+		).collect();
+        
+		println!("SOCKETS: {:?}", data);
+		for ip_end in 1..4 {
+			assert!(data.contains(
+				&SocketAddr::new(
+					IpAddr::V4(Ipv4Addr::new(127, 0, 0, ip_end)),
+					1
+				)
+			))
+		}
+	}
+
+	#[test]
+	fn cidr_generates_one() {
+		let ports = &[PortInput::from_str("1").unwrap()];
+
+		let data = CidrPortCombinator::new(
+			&IpCidr::from_str("127.0.0.1/32").unwrap(),
+			ports
+		).next();
+
+		assert_eq!(data, Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127,0,0,1)), 1)));
+	}
+
+
 }

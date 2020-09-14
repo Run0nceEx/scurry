@@ -19,6 +19,10 @@ pub struct Arguments {
     /// Target IP addresses, supports IPv4 and IPv6. Accepts Accepts a sequence of IPs "10.0.0.1" and CIDR "10.0.0.1/24"
     pub target: Vec<AddressInput>,
 
+    /// Exclude by IP/cidr address
+    #[structopt(parse(try_from_str = address_parser), short = "-x", long)]
+    pub exclude: Vec<AddressInput>,
+
     #[structopt(long, short)]
     /// Ranges of ports you'd like to scan on every IP, Accepts a sequence of numbers "80" and ranges "8000-10000"
     pub ports: Vec<PortInput>,

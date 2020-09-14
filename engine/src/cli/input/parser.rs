@@ -14,6 +14,8 @@ pub enum AddressInput {
     Singleton(IpAddr),
     CIDR(IpCidr),
     File(PathBuf),
+
+    // TheWorld - special 
 }
 
 

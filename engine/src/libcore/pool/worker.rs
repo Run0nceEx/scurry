@@ -4,7 +4,7 @@ use super::{
 
 use tokio::{
     time::timeout,
-    stream::{StreamExt, Stream}
+    stream::Stream
 };
 
 use evc::OperationCache;
@@ -117,7 +117,6 @@ where
 
         if limit >= self.job_count() {
             let mut spawn_count = limit-self.job_count();
-
             if spawn_count > buf.len() {
                 spawn_count = buf.len()
             }
@@ -187,9 +186,7 @@ fn spawn_worker<J, R, S>(
     R: Send + Sync + 'static + Clone,
     S: Send + Sync + 'static + Clone
 {
-    tokio::spawn(async move {
-        tracing::event!(target: "Schedule Thread", tracing::Level::TRACE, "Firing job");
-        
+    tokio::spawn(async move {        
         let sig = match timeout(ttl, J::exec(&mut state)).await {
             Ok(Ok(sig)) => sig,
             Err(_) => JobCtrl::Error(JobErr::IO(std::io::ErrorKind::TimedOut)),
@@ -201,9 +198,7 @@ fn spawn_worker<J, R, S>(
             }
         };
 
-        tracing::event!(target: "Schedule Thread", tracing::Level::TRACE, "Completed job");
         let mut lock = vtx.lock().unwrap();
         lock.write(Operation::Push((sig, state)));
-        
     });
 }

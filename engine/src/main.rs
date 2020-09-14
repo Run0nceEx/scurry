@@ -39,15 +39,15 @@ fn setup_subscribers() {
 
 fn make_generator<'a>(targets: &'a [AddressInput], ports: &'a [PortInput]) -> Box<dyn Iterator<Item=SocketAddr> + 'a> {
 	//this hack did not work
-	
+
 	let mut generators: Box<dyn Iterator<Item=SocketAddr>> = Box::new(Vec::new().into_iter());
 	
 	let mut singles = Vec::new();
 	
 	for entry in targets {
 		match entry {
-			AddressInput::CIDR(rng) => 
-				generators = Box::new(generators.chain(CidrPortCombinator::new(&rng, &ports))),	
+			AddressInput::CIDR(cidr) => 
+				generators = Box::new(generators.chain(CidrPortCombinator::new(&cidr, &ports))),	
 			AddressInput::Singleton(singleton) =>
 				generators = Box::new(generators.chain(IpAddrPortCombinator::new(singleton.clone(), &ports))),
 			
