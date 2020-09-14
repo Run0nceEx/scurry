@@ -14,7 +14,6 @@ pub struct Stash<T> {
 }
 
 impl<T> Stash<T> {
-
     #[inline]
     pub fn new() -> Self {
         Self {
@@ -25,7 +24,7 @@ impl<T> Stash<T> {
 
     #[inline]
     pub fn insert(&mut self, state: T, delay_for: &Duration) {
-        // ignoring key bc we dont transverse `self.pending` to remove items from
+        // ignoring key bc we dont transverse `self.stash` to remove items from
         // `self.timer`
         let mut key: usize = rand::random();
         while let Some(_) = self.stash.get(&key) {

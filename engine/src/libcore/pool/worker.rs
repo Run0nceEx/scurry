@@ -14,6 +14,8 @@ use std::sync::{Arc, Mutex};
 use std::task::{Poll, Context};
 use std::pin::Pin;
 
+use crate::libcore::util::Boundary;
+
 #[derive(Clone, Debug, Default)]
 pub struct EVec<T>(pub Vec<T>);
 
@@ -72,7 +74,7 @@ where
 
     ttl: std::time::Duration, // time to live for each job
     
-    throttle: usize, // max amount of job_count()
+    throttle: Boundary, // max amount of job_count()
     _job: std::marker::PhantomData<J>,
 }
 
@@ -82,8 +84,18 @@ where
 	R: Send + Sync + 'static + std::fmt::Debug + Clone,
 	S: Send + Sync + 'static + std::fmt::Debug + Clone
 {
-	pub fn new(channel_size: usize, throttle: usize, ttl: std::time::Duration) -> Self {		
-        let (tx, rx) = evc::new(EVec::with_compacity(channel_size));
+	pub fn new(throttle: Boundary, ttl: std::time::Duration) -> Self {
+        const ALLOC_SIZE: usize = 16384;
+
+        let compacity = {
+            if let Boundary::Limited(n) = throttle {
+                if n > ALLOC_SIZE { n+1 }
+                else { ALLOC_SIZE }
+            }
+            else { ALLOC_SIZE }
+        };
+
+        let (tx, rx) = evc::new(EVec::with_compacity(compacity));
 
         let instance = Self {
             throttle,
@@ -96,40 +108,45 @@ where
         instance
     }
 
+
+    fn calc_new_spawns(&self, buf: &Vec<S>) -> usize {
+        let limit = match self.throttle {
+            Boundary::Limited(limit) => limit, 
+            Boundary::Unlimited => return buf.len()
+        };
+
+        if limit >= self.job_count() {
+            let mut spawn_count = limit-self.job_count();
+
+            if spawn_count > buf.len() {
+                spawn_count = buf.len()
+            }
+
+            return spawn_count
+        }
+
+        return 0 
+    }
+
     #[inline]
     pub fn job_count(&self) -> usize {
         std::sync::Arc::strong_count(&self.tx)
     }
     
-    pub fn fire_jobs(&mut self, rescheduled_buf: &mut Vec<S>)
+    pub fn fire_jobs(&mut self, buf: &mut Vec<S>) -> usize 
     where
         J: CRON<Response = R, State = S>,
         R: Send + Sync + 'static + std::fmt::Debug + Clone,
         S: Send + Sync + 'static + std::fmt::Debug + Clone
     
     {
-        let top = {
-            if self.throttle > 0 {
-                if self.job_count() < self.throttle {
-                    let mut i = self.throttle-self.job_count();
-                    if i >= rescheduled_buf.len() {
-                        i = rescheduled_buf.len()
-                    }
-                    i
-                }
-                else {
-                    0
-                }
+        let new_spawn_count = self.calc_new_spawns(&buf);
+        if new_spawn_count > 0 {
+            for state in buf.drain(..new_spawn_count) {
+                spawn_worker::<J, R, S>(self.tx.clone(), state, self.ttl)
             }
-
-            else {
-                rescheduled_buf.len()
-            }
-        };
-
-        for state in rescheduled_buf.drain(..top) {
-            spawn_worker::<J, R, S>(self.tx.clone(), state, self.ttl)
         }
+        new_spawn_count
     }
 }
 
@@ -172,14 +189,14 @@ fn spawn_worker<J, R, S>(
 {
     tokio::spawn(async move {
         tracing::event!(target: "Schedule Thread", tracing::Level::TRACE, "Firing job");
-        let now = std::time::Instant::now();
-
-        let mut sig = match timeout(ttl, J::exec(&mut state)).await {
+        
+        let sig = match timeout(ttl, J::exec(&mut state)).await {
             Ok(Ok(sig)) => sig,
             Err(_) => JobCtrl::Error(JobErr::IO(std::io::ErrorKind::TimedOut)),
             
             Ok(Err(err)) => {
-                tracing::event!(target: "Schedule Thread", tracing::Level::TRACE, "Error has occured {}", err);
+                //tracing::event!(target: "Schedule Thread", tracing::Level::TRACE, "Error has occured {}", err);
+                eprintln!("task failed: {}", err);
                 JobCtrl::Error(JobErr::TaskFailed)
             }
         };

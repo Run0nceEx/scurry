@@ -2,21 +2,13 @@ use std::{
 	net::{SocketAddr, IpAddr},
 	time::Duration,
 	collections::HashMap,
+	fmt::Debug
 };
+
 use crate::{
 	libcore::{
-		pool::{
-			Worker,
-			Pool,
-			CRON,
-			JobCtrl,
-			JobErr
-		},
-		
-		discovery::service::{
-			connect_scan::{OpenPortJob},
-		},
-
+		discovery::service::connect_scan::OpenPortJob,
+		pool::{Worker, Pool, CRON, JobCtrl, JobErr},
 		util::{Boundary, get_max_fd},
 		model::{Service, State as NetState},
 	},
@@ -50,8 +42,6 @@ impl From<JobErr> for NetState {
 	}
 }
 
-use std::fmt::Debug;
-
 trait CastAs<T> {
 	fn cast<'a>(&'a self) -> &'a T;
 }
@@ -73,8 +63,8 @@ impl Output {
 					let sock = state.cast();
 
 					match sig {
-						JobCtrl::Return(netstate, resp) => println!("{}\t{}\t{}", sock.ip(), sock.port(), netstate),	
-						JobCtrl::Error(err) => eprintln!("unable to run {:?}:[{:?}]", state, sig)
+						JobCtrl::Return(netstate, _resp) => println!("{}\t{}\t{}", sock.ip(), sock.port(), netstate),	
+						JobCtrl::Error(err) => eprintln!("unable to run {:?}:[{:?}]", err, sig)
 					}
 				}
 			},
@@ -115,13 +105,11 @@ where
 	//println!("BUF {:?}", generator.collect::<Vec<_>>());
 	// len = 0
 
-	pool.mut_buffer().extend(
-		generator
-	);
+	
 
 	loop {
 		println!("HALLO");
-		let x = pool.tick().await;
+		let x = pool.tick(&mut Vec::new()).await;
 		println!("+++ {:?}", x);
 		results.handle(&x);
 
@@ -180,11 +168,14 @@ where
     S: Send + Sync + Clone + std::fmt::Debug + 'static,
 
 {
-	const EVEC_SIZE: usize = 16384;
-	const FD_AVAIL_PRECENT: f32 = 0.02;
 	const TIMEOUT: u64 = 15;
-	
+
+	let limit = match get_max_fd().unwrap() {
+		Boundary::Limited(i) => Boundary::Limited(i-100),
+		x => x
+	};
+
     Pool::new(
-		Worker::new(EVEC_SIZE, fd_throttle(FdAvail::Number(100)), std::time::Duration::from_secs(TIMEOUT))
+		Worker::new(limit, std::time::Duration::from_secs(TIMEOUT))
 	)
 }

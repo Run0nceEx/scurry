@@ -2,6 +2,65 @@ use cidr_utils::cidr::{IpCidrIpAddrIterator, IpCidr};
 use std::net::{IpAddr, SocketAddr};
 use crate::libcore::model::PortInput;
 
+
+enum FeedItem<'a> {
+	IpAddr(IpAddrPortCombinator<'a>),
+	Cidr(CidrPortCombinator<'a>)
+}
+
+struct Feeder<'a> {
+	ports: &'a [PortInput],
+	items: Vec<FeedItem<'a>>,
+	working_on: Option<FeedItem<'a>>,
+}
+
+impl<'a> Feeder<'a> {
+	pub fn new(ports: &'a [PortInput]) -> Self {
+		Self {
+			ports,
+			items: Vec::new(),
+			working_on: None
+		}
+	}
+
+	pub fn push(&mut self, item: FeedItem<'a>) {
+		self.items.push(item);
+	}
+
+	pub fn generate_chunk(&mut self, buffer: &mut Vec<SocketAddr>, amount: usize) -> usize {
+		let original = buffer.len();
+
+		while original-buffer.len() >= amount {
+			if let Some(iterator) = &mut self.working_on {
+				let item = match iterator {
+					FeedItem::Cidr(cidr_iterator) => cidr_iterator.next(),
+					FeedItem::IpAddr(ip_iterator) => ip_iterator.next()
+				};
+				
+				match item {
+					Some(item) => {
+						buffer.push(item);
+						continue
+					}
+
+					None => self.working_on = None
+				}
+			}
+			
+			if let Some(x) = self.items.pop() {
+				self.working_on = Some(x);
+			}
+
+			else {
+				return original-buffer.len()
+			}
+		}
+
+		original-buffer.len()
+	}
+}
+
+
 pub struct IpAddrPortCombinator<'a> {
 	inner: IpAddr,
 	ports: &'a [PortInput],

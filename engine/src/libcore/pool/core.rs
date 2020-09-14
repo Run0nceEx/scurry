@@ -27,7 +27,6 @@ where
 {
     pub pool: Worker<J, R, S>,
     timer: std::time::Instant,
-    queued: Vec<S>,
     stash: Stash<S>,
 
 }
@@ -43,29 +42,31 @@ where
         Self {
             pool,
             timer: std::time::Instant::now(),
-            queued: Vec::new(),
             stash: Stash::new(),
         }
     }
 
-    pub async fn tick(&mut self) -> Vec<(JobCtrl<R>, S)> {
-        self.stash.release(&mut self.queued).await;
-        println!("HALLO 2 | queued-len {}", self.queued.len());
-		if self.queued.len() > 0 {
-            self.pool.fire_jobs(&mut self.queued);
+    pub async fn tick(&mut self, queued: &mut Vec<S>) -> Vec<(JobCtrl<R>, S)> {
+        const RESCHEDULE: u64 = 5;
+
+        self.stash.release(queued).await;
+        println!("HALLO 2 | queued-len {}", queued.len());
+        
+        if queued.len() > 0 {
+            self.pool.fire_jobs(queued);
 		}
 
 		if self.timer.elapsed() >= std::time::Duration::from_secs(5) {			
 			tracing::event!(
 				target: "Pool", tracing::Level::DEBUG, "Job count is [{}/{}] jobs",
-				self.pool.job_count(), self.queued.len(),
+				self.pool.job_count(), queued.len(),
 			);
 
 			self.timer = std::time::Instant::now();
         }
 
         let mut ret_buf = Vec::new();
-        const RESCHEDULE: u64 = 5;
+        
 
         while let Some(mut chunk) = self.pool.next().await {
             println!("CHUNK: {:?}", chunk);
@@ -106,17 +107,7 @@ where
 
     #[inline]
     pub fn is_working(&self) -> bool {
-        self.pool.job_count()-1 > 0 && self.stash.amount() > 0 && self.queued.len() > 0  
-    }
-
-    #[inline]
-    pub fn mut_buffer<'a>(&'a mut self) -> &'a mut Vec<S> {
-        &mut self.queued
-    }
-    
-    #[inline]
-    pub fn buffer<'a>(&'a self) -> &'a Vec<S> {
-        &self.queued
+        self.pool.job_count()-1 > 0 && self.stash.amount() > 0  
     }
 }
 

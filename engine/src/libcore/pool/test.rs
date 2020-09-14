@@ -16,14 +16,14 @@ use super::{
 
 use crate::libcore::{
     error::Error,
-    model::State as NetState
+    model::State as NetState,
+    util::Boundary
 };
 
 use tokio::stream::StreamExt;
 use std::time::Duration;
 
 pub const JOB_CNT: usize = 100;
-pub const POOLSIZE: usize = 16_384;
 
 #[cfg(test)]
 pub mod noop {
@@ -38,7 +38,7 @@ pub mod noop {
         R: Send + Sync + Clone + Default + std::fmt::Debug + 'static
     {
         pub fn default_test() -> Self {
-            Worker::new(POOLSIZE, 0, std::time::Duration::from_secs(5))
+            Worker::new(Boundary::Unlimited, std::time::Duration::from_secs(5))
         }
     }
 
@@ -170,8 +170,7 @@ fn all_timeout() {
     let mut buf = Vec::new();
     
     let mut pool: Worker<Handler, mock::Response, mock::State> = Worker::new(
-        POOLSIZE,
-        0, 
+        Boundary::Unlimited,
         std::time::Duration::from_secs(DELAY_SECS-1)
     );
 
@@ -211,7 +210,7 @@ fn evpool_poll_noop_bench(b: &mut Bencher) {
     let mut rt = Runtime::new().unwrap();
     let mut buf = vec![noop::State; JOB_CNT];
 
-    let mut pool = noop::Pool::new(POOLSIZE, 0, std::time::Duration::from_secs(5));
+    let mut pool = noop::Pool::new(Boundary::Unlimited, std::time::Duration::from_secs(5));
     rt.block_on(async {
         pool.fire_jobs(&mut buf)
     });
@@ -254,7 +253,7 @@ fn evpool_poll_addition_bench(b: &mut Bencher) {
         });
     }
 
-    let mut pool: Worker<Handler, usize, State> = Worker::new(POOLSIZE, 0, std::time::Duration::from_secs(5));
+    let mut pool: Worker<Handler, usize, State> = Worker::new(Boundary::Unlimited, std::time::Duration::from_secs(5));
     
     rt.block_on(async {    
         pool.fire_jobs(&mut buf);
