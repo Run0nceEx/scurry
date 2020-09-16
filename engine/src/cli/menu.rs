@@ -12,11 +12,10 @@ use crate::{
 		util::{Boundary, get_max_fd},
 		model::{Service, State as NetState},
 	},
-	cli::input::parser
+	cli::input::{parser, combine}
 };
 
 use smallvec::SmallVec;
-const TICK_NS: u64 = 500;
 
 #[derive(Debug)]
 pub enum Output {
@@ -54,8 +53,9 @@ impl<T> CastAs<T> for T {
 
 impl Output {
 	fn handle<R, S>(&mut self, buf: &Vec<(JobCtrl<R>, S)>)
-	where R: Debug,
-	S: CastAs<SocketAddr> + Debug
+	where
+		R: Debug,
+		S: CastAs<SocketAddr> + Debug
 	{
 		match self {
 			Output::Stream => {
@@ -72,7 +72,7 @@ impl Output {
 			Output::Map(map) => {
 				for (sig, state) in buf {
 					let sock = state.cast();
-
+					
 					let service = match sig {
 						JobCtrl::Return(netstate, _resp) => 
 							Service {port: sock.port(), state: *netstate},
@@ -95,32 +95,23 @@ impl Output {
 	}
 }
 
-pub async fn connect_scan<T>(generator: T, results: &mut Output) 
-where 
-	T: Iterator<Item=SocketAddr>,
-{
-    let mut pool = tokio_tcp_pool::<OpenPortJob, SocketAddr, SocketAddr>();
+pub async fn connect_scan<'a>(generator: &mut combine::Feeder<'a>, results: &mut Output) {
+	const TICK_NS: u64 = 500;
+	const CHUNK_SIZE: usize = 4000;
 
+	let mut pool = tokio_tcp_pool::<OpenPortJob, SocketAddr, SocketAddr>();
+	let mut buffer = Vec::new();
 
-	//println!("BUF {:?}", generator.collect::<Vec<_>>());
-	// len = 0
+	generator.generate_chunk(&mut buffer, CHUNK_SIZE);
 
-	
-
-	loop {
-		println!("HALLO");
-		let x = pool.tick(&mut Vec::new()).await;
-		println!("+++ {:?}", x);
+	while pool.is_working() {
+		let x = pool.tick(&mut buffer).await;		
 		results.handle(&x);
-
-		if !pool.is_working() {
-			break
-		}  
 
 		tokio::time::delay_for(Duration::from_nanos(TICK_NS)).await;
 	}
-	
 
+	results.handle(&pool.flush_channel());
 }
 
 

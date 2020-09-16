@@ -1,4 +1,3 @@
-use crate::libcore::error::Error;
 use super::{
     stash::Stash,
     worker::{Worker, JobCtrl, JobErr},
@@ -6,17 +5,8 @@ use super::{
 
 use tokio::stream::StreamExt;
 use std::fmt::Debug;
+use super::CRON;
 
-
-/// Used in scheduler (Command run on)
-#[async_trait::async_trait]
-pub trait CRON: std::fmt::Debug {
-    type State;
-    type Response;
-
-    /// Run function, and then append to parent if more jobs are needed
-    async fn exec(state: &mut Self::State) -> Result<JobCtrl<Self::Response>, Error>;
-}
 
 pub struct Pool<J, R, S>
 where
@@ -48,7 +38,7 @@ where
 
     pub async fn tick(&mut self, queued: &mut Vec<S>) -> Vec<(JobCtrl<R>, S)> {
         const RESCHEDULE: u64 = 5;
-
+        
         self.stash.release(queued).await;
         println!("HALLO 2 | queued-len {}", queued.len());
         
@@ -109,6 +99,16 @@ where
     pub fn is_working(&self) -> bool {
         self.pool.job_count()-1 > 0 && self.stash.amount() > 0  
     }
+
+    #[inline]
+    pub fn flush_stash(&mut self, buf: &mut Vec<S>) -> usize {
+        self.stash.flush(buf)
+    }
+
+    #[inline]
+    pub fn flush_channel(&mut self) -> Vec<(JobCtrl<R>, S)> {
+        self.pool.flush()
+    }
 }
 
 fn is_resource_blocked(errno: i32) -> bool {
@@ -121,3 +121,4 @@ fn is_resource_blocked(errno: i32) -> bool {
         _ => false
     }
 }
+

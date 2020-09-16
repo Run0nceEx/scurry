@@ -35,14 +35,32 @@ impl<T> Stash<T> {
         self.stash.insert(key, state);
     }
 
-    /// Release tasks from Timer
+    /// flushes all the states of tasks left inside of `Stash`
+    /// and returns the number it placed at the tail of the buffer
+    pub fn flush(&mut self, jobs: &mut Vec<T>) -> usize {
+        let amount = self.stash.len();
+        jobs.extend(
+            self.stash
+                .drain()
+                .map(|(_id, state)| state)
+        );
+        
+        self.timer.clear();
+        amount
+    }
+
+    /// pushes states of tasks into `job` parameter and,
+    /// returns the amount it placed at the tail of the buffer, 
     #[inline]
-    pub async fn release(&mut self, jobs: &mut Vec<T>) {
+    pub async fn release(&mut self, jobs: &mut Vec<T>) -> usize {
+        let mut amount = 0;
         while let Some(Ok(res)) = self.timer.next().await {
             if let Some(state) = self.stash.remove(res.get_ref()) {
                 jobs.push(state);
+                amount += 1;
             }
         }
+        amount
     }
 
     #[inline]

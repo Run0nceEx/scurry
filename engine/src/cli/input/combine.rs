@@ -1,6 +1,7 @@
 use cidr_utils::cidr::{IpCidrIpAddrIterator, IpCidr};
 use std::net::{IpAddr, SocketAddr};
 use crate::libcore::model::PortInput;
+use super::parser::AddressInput;
 
 
 enum FeedItem<'a> {
@@ -8,24 +9,38 @@ enum FeedItem<'a> {
 	Cidr(CidrPortCombinator<'a>)
 }
 
-struct Feeder<'a> {
+pub struct Feeder<'a> {
 	ports: &'a [PortInput],
 	items: Vec<FeedItem<'a>>,
 	working_on: Option<FeedItem<'a>>,
 }
 
+
 impl<'a> Feeder<'a> {
-	pub fn new(ports: &'a [PortInput], ) -> Self {
+	pub fn new(ports: &'a [PortInput], address_input: &Vec<AddressInput> ) -> Self {
+		let mut items = Vec::new();
+
+		for addr in address_input {
+			match addr {
+				AddressInput::CIDR(cidr) => items.push(
+					FeedItem::Cidr(CidrPortCombinator::new(&cidr, ports))
+				),
+
+				AddressInput::Singleton(ip) => items.push(
+					FeedItem::IpAddr(IpAddrPortCombinator::new(*ip, ports))
+				),
+				
+				_ => unimplemented!()
+			}
+		}
+		
 		Self {
 			ports,
-			items: Vec::new(),
+			items,
 			working_on: None
 		}
 	}
 
-	pub fn push(&mut self, item: FeedItem<'a>) {
-		self.items.push(item);
-	}
 
 	pub fn generate_chunk(&mut self, buffer: &mut Vec<SocketAddr>, amount: usize) -> usize {
 		let original = buffer.len();
@@ -222,6 +237,4 @@ mod test {
 
 		assert_eq!(data, Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127,0,0,1)), 1)));
 	}
-
-
 }

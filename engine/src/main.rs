@@ -17,7 +17,7 @@ use cli::{
 	menu::Output,
 	input::{
 		parser::{ScanMethod, AddressInput, Format},
-		combine::{IpAddrPortCombinator, CidrPortCombinator},
+		combine::{IpAddrPortCombinator, CidrPortCombinator, Feeder},
 		file::InputFile
 	}
 };
@@ -72,15 +72,14 @@ fn main() -> Result<(), Error> {
 		setup_subscribers();
 		
 		let generator = make_generator(&opt.target, &opt.ports);
-		
-		println!("targets: {:?}", &opt.target);
-
+		Feeder::new(&opt.ports, &opt.target);
 
 		match opt.method {
-		 	ScanMethod::Open => cli::menu::connect_scan(generator, &mut output_type).await,
+		 	ScanMethod::Open => unimplemented!(), //cli::menu::connect_scan(generator, &mut output_type).await,
 			ScanMethod::Socks5 => unimplemented!() // cli::menu::socks_scan(generators, &mut output_type).await
 		};
-		println!("{:?}", output_type);
+		
+		println!("{:?}", &output_type);
 
 		if let Output::Map(map) = output_type {
 			match opt.format {
@@ -89,7 +88,6 @@ fn main() -> Result<(), Error> {
 					service.iter().for_each(|s| println!("\t\t{}\t{}", s.port, s.state));
 				}),
 				Format::Json => println!("{}", serde_json::to_string_pretty(&map).unwrap()),
-				
 				Format::Stream => unreachable!() 
 			}
 		}

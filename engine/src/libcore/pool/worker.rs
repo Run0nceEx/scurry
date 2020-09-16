@@ -1,6 +1,4 @@
-use super::{
-    core::CRON
-};
+use super::CRON;
 
 use tokio::{
     time::timeout,
@@ -10,11 +8,16 @@ use tokio::{
 use evc::OperationCache;
 use crate::libcore::model::State as NetState;
 
-use std::sync::{Arc, Mutex};
-use std::task::{Poll, Context};
-use std::pin::Pin;
+use std::{
+    sync::{Arc, Mutex},
+    task::{Poll, Context},
+    pin::Pin,
+    net::SocketAddr
+};
+
 
 use crate::libcore::util::Boundary;
+use crate::cli::input::combine::Feeder;
 
 #[derive(Clone, Debug, Default)]
 pub struct EVec<T>(pub Vec<T>);
@@ -109,16 +112,16 @@ where
     }
 
 
-    fn calc_new_spawns(&self, buf: &Vec<S>) -> usize {
+    fn calc_new_spawns(&self, buf_len: usize) -> usize {
         let limit = match self.throttle {
             Boundary::Limited(limit) => limit, 
-            Boundary::Unlimited => return buf.len()
+            Boundary::Unlimited => return buf_len
         };
 
         if limit >= self.job_count() {
             let mut spawn_count = limit-self.job_count();
-            if spawn_count > buf.len() {
-                spawn_count = buf.len()
+            if spawn_count > buf_len {
+                spawn_count = buf_len
             }
 
             return spawn_count
@@ -132,20 +135,53 @@ where
         std::sync::Arc::strong_count(&self.tx)
     }
     
-    pub fn fire_jobs(&mut self, buf: &mut Vec<S>) -> usize 
-    where
-        J: CRON<Response = R, State = S>,
-        R: Send + Sync + 'static + std::fmt::Debug + Clone,
-        S: Send + Sync + 'static + std::fmt::Debug + Clone
+    #[inline]
+    pub fn throttled(&self) -> Boundary {
+        self.throttle
+    }
+
     
+    pub fn fire_jobs(&mut self, buf: &mut Vec<S>) -> usize {
+        let mut amount = 0;
+        for state in buf.drain(..) {
+            amount += 1;
+            spawn_worker::<J, R, S>(self.tx.clone(), state, self.ttl)
+        }
+        amount
+    }
+
+    pub fn throttle_fire(&mut self, buf: &mut Vec<S>) -> usize 
     {
-        let new_spawn_count = self.calc_new_spawns(&buf);
+        let new_spawn_count = self.calc_new_spawns(buf.len());
+
         if new_spawn_count > 0 {
             for state in buf.drain(..new_spawn_count) {
                 spawn_worker::<J, R, S>(self.tx.clone(), state, self.ttl)
             }
         }
+
         new_spawn_count
+    }
+
+    pub fn throttle_feed_fire<'a>(&mut self, buf: &mut Vec<S>, feed: &mut Feeder<'a>) -> usize
+    where S: From<SocketAddr>
+    {
+        let mut sock_buf = Vec::new();
+        let amount = feed.generate_chunk(&mut sock_buf, self.calc_new_spawns(buf.len()));
+
+        buf.extend(sock_buf.drain(..).map(|x| x.into()));
+        
+        self.throttle_fire(buf)
+    }
+
+    pub fn flush(&mut self) -> Vec<(JobCtrl<R>, S)> {
+        let mut lock = self.tx.lock().unwrap();
+        let mut buffer = self.rx.read().0.clone();
+        lock.refresh();
+        buffer.extend(self.rx.read().0.clone());
+        lock.write(Operation::Clear);
+        lock.refresh();
+        buffer
     }
 }
 
@@ -161,7 +197,6 @@ where
     fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let mut lock = self.tx.lock().unwrap();
         lock.refresh();
-
         let jobs = &self.rx.read().0;
         if jobs.len() > 0 {
             // this is safe because operations
@@ -192,7 +227,6 @@ fn spawn_worker<J, R, S>(
             Err(_) => JobCtrl::Error(JobErr::IO(std::io::ErrorKind::TimedOut)),
             
             Ok(Err(err)) => {
-                //tracing::event!(target: "Schedule Thread", tracing::Level::TRACE, "Error has occured {}", err);
                 eprintln!("task failed: {}", err);
                 JobCtrl::Error(JobErr::TaskFailed)
             }

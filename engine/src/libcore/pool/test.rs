@@ -11,7 +11,7 @@ use tokio::runtime::Runtime;
 use super::{
     Worker,
     JobCtrl,
-    core::CRON,
+    CRON,
 };
 
 use crate::libcore::{
@@ -30,7 +30,7 @@ pub mod noop {
     use super::*;
 
     pub type NoOpPool<S, R> = Worker<Handler<S, R>, R, S>;
-    pub type Pool = NoOpPool<State, Response>;
+    pub type NopWorker = NoOpPool<State, Response>;
 
     impl<S, R> NoOpPool<S, R>
     where 
@@ -87,7 +87,7 @@ pub mod noop {
 }
 
 #[test]
-fn pool_single_in_single_out() {
+fn worker_single_in_single_out() {
     let mut rt = Runtime::new().unwrap();
     let mut buf = Vec::new();
 
@@ -96,7 +96,7 @@ fn pool_single_in_single_out() {
     );
 
     rt.block_on(async move {
-        let mut pool = noop::Pool::default_test();
+        let mut pool = noop::NopWorker::default_test();
         pool.fire_jobs(&mut buf);
         
         tokio::time::delay_for(std::time::Duration::from_secs(5)).await;
@@ -108,13 +108,13 @@ fn pool_single_in_single_out() {
 
 
 #[test]
-fn pool_job_count_accurate() {
+fn worker_job_count_accurate() {
     let mut rt = Runtime::new().unwrap();
 
     let mut buf = vec![noop::State; 1];
 
     rt.block_on(async move {
-        let mut pool = noop::Pool::default_test();
+        let mut pool = noop::NopWorker::default_test();
         
         pool.fire_jobs(&mut buf);
         assert_eq!(pool.job_count(), 2);
@@ -128,13 +128,13 @@ fn pool_job_count_accurate() {
 
 
 #[test]
-fn all_in_all_out() {
+fn worker_all_in_all_out() {
     let mut rt = Runtime::new().unwrap();
     
     let mut buf = vec![noop::State; JOB_CNT];
     
     rt.block_on(async move {
-        let mut pool = noop::Pool::default_test();
+        let mut pool = noop::NopWorker::default_test();
 
         assert_eq!(buf.len(), JOB_CNT);
         pool.fire_jobs(&mut buf);
@@ -147,7 +147,7 @@ fn all_in_all_out() {
 
 //assert all tasks do eventually timeout
 #[test]
-fn all_timeout() {
+fn worker_all_timeout() {
     use noop as mock;
 
     const DELAY_SECS: u64 = 3;
@@ -204,13 +204,43 @@ fn all_timeout() {
 }
 
 
+use crate::libcore::pool::Pool;
+
+#[test]
+fn pool_all_in_all_out() {
+    let mut rt = Runtime::new().unwrap();
+    let worker: noop::NopWorker = Worker::new(Boundary::Unlimited, std::time::Duration::from_secs(5));
+    let mut buf = vec![noop::State; 3];
+    let mut pool = Pool::new(worker);
+
+
+    let results = rt.block_on(async move {
+        for i in 0..2 {
+            let res = pool.tick(&mut buf).await;
+            
+            if i == 0 {
+                tokio::time::delay_for(std::time::Duration::from_secs(2)).await;
+            }
+            else if i == 1 {
+                return res
+            }
+            
+        }
+
+        unreachable!()
+
+    });
+
+    assert_eq!(results.len(), 3);
+}
+
 
 #[bench]
 fn evpool_poll_noop_bench(b: &mut Bencher) {
     let mut rt = Runtime::new().unwrap();
     let mut buf = vec![noop::State; JOB_CNT];
 
-    let mut pool = noop::Pool::new(Boundary::Unlimited, std::time::Duration::from_secs(5));
+    let mut pool = noop::NopWorker::new(Boundary::Unlimited, std::time::Duration::from_secs(5));
     rt.block_on(async {
         pool.fire_jobs(&mut buf)
     });

@@ -1,7 +1,7 @@
 use std::fs::File;
 use std::io::{BufReader, BufRead};
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum Boundary {
     Limited(usize),
     Unlimited
@@ -21,6 +21,7 @@ pub fn get_max_fd() -> Result<Boundary, Box<std::error::Error>> {
 
     let mut fd = BufReader::new(File::open("/proc/self/limits")?);
     let mut buf = String::new();
+    
     while let Ok(n) = fd.read_line(&mut buf) {
         if buf.trim().starts_with(INDICATOR) {
             if let Some(size) = buf.split("            ").nth(1) {
