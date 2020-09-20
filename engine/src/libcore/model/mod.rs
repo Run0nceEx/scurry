@@ -1,6 +1,7 @@
 use serde::Serialize;
 use std::net::IpAddr;
 
+#[allow(dead_code)]
 #[derive(Debug, Eq, PartialEq, Hash, Copy, Clone, Serialize)]
 pub enum State {
     Closed,
@@ -16,7 +17,7 @@ impl std::fmt::Display for State {
             State::Filtered => "filtered"
         };
         
-        write!(f, "{}", x);
+        write!(f, "{}", x)?;
         Ok(())
     }
 }

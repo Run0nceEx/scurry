@@ -97,17 +97,23 @@ impl Output {
 
 pub async fn connect_scan<'a>(generator: &mut combine::Feeder<'a>, results: &mut Output) {
 	const TICK_NS: u64 = 500;
-	const CHUNK_SIZE: usize = 4000;
 
 	let mut pool = tokio_tcp_pool::<OpenPortJob, SocketAddr, SocketAddr>();
 	let mut buffer = Vec::new();
-
-	generator.generate_chunk(&mut buffer, CHUNK_SIZE);
-
-	while pool.is_working() {
-		let x = pool.tick(&mut buffer).await;		
-		results.handle(&x);
-
+	
+	loop {
+		if !generator.is_done() {
+			pool.fire_from_feeder(&mut buffer, generator).await;
+		}
+		
+		let jobs_done = pool.tick(&mut buffer).await;		
+		
+		results.handle(&jobs_done);
+		
+		if buffer.len() == 0 && generator.is_done() && pool.job_count() == 1 {
+			break
+		}
+		
 		tokio::time::delay_for(Duration::from_nanos(TICK_NS)).await;
 	}
 
@@ -133,24 +139,6 @@ pub async fn connect_scan<'a>(generator: &mut combine::Feeder<'a>, results: &mut
 //         tokio::time::delay_for(Duration::from_nanos(TICK_NS)).await;
 // 	}
 // }
-
-fn fd_throttle(leave_available: FdAvail) -> usize {
-	let boundary = get_max_fd().unwrap();
-	eprintln!("Setting throttle to {}", boundary);
-
-	match boundary {
-		Boundary::Limited(limit) => match leave_available {
-			FdAvail::Percentage(x) => (limit as f32).powf(x).round().floor() as usize,
-			FdAvail::Number(x) => limit-x
-		},
-		Boundary::Unlimited => 0
-	}
-}
-
-enum FdAvail {
-	Number(usize),
-	Percentage(f32)
-}
 
 fn tokio_tcp_pool<J, R, S>() -> Pool<J, R, S>
 where

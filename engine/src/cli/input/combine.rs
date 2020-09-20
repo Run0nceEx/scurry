@@ -3,21 +3,19 @@ use std::net::{IpAddr, SocketAddr};
 use crate::libcore::model::PortInput;
 use super::parser::AddressInput;
 
-
+#[derive(Debug)]
 enum FeedItem<'a> {
 	IpAddr(IpAddrPortCombinator<'a>),
 	Cidr(CidrPortCombinator<'a>)
 }
 
 pub struct Feeder<'a> {
-	ports: &'a [PortInput],
 	items: Vec<FeedItem<'a>>,
 	working_on: Option<FeedItem<'a>>,
 }
 
-
 impl<'a> Feeder<'a> {
-	pub fn new(ports: &'a [PortInput], address_input: &Vec<AddressInput> ) -> Self {
+	pub fn new(ports: &'a [PortInput], address_input: &[AddressInput] ) -> Self {
 		let mut items = Vec::new();
 
 		for addr in address_input {
@@ -33,19 +31,24 @@ impl<'a> Feeder<'a> {
 				_ => unimplemented!()
 			}
 		}
-		
+
 		Self {
-			ports,
 			items,
 			working_on: None
 		}
 	}
 
+	pub fn is_done(&self) -> bool {
+		match &self.working_on {
+			None => self.items.len() == 0,
+			Some(_) => return false
+		}
+	}
 
 	pub fn generate_chunk(&mut self, buffer: &mut Vec<SocketAddr>, amount: usize) -> usize {
 		let original = buffer.len();
 
-		while original-buffer.len() >= amount {
+		while amount > buffer.len() - original {
 			if let Some(iterator) = &mut self.working_on {
 				let item = match iterator {
 					FeedItem::Cidr(cidr_iterator) => cidr_iterator.next(),
@@ -61,21 +64,23 @@ impl<'a> Feeder<'a> {
 					None => self.working_on = None
 				}
 			}
-			
-			if let Some(x) = self.items.pop() {
-				self.working_on = Some(x);
-			}
 
 			else {
-				return original-buffer.len()
+				self.working_on = self.items.pop();
+				match self.working_on {
+					Some(_) => continue,
+					None => return buffer.len()-original 
+				}
 			}
+		
 		}
 
-		original-buffer.len()
+		return buffer.len()-original;
 	}
 }
 
 
+#[derive(Debug)]
 pub struct IpAddrPortCombinator<'a> {
 	ip: IpAddr,
 	ports: &'a [PortInput],
@@ -130,6 +135,7 @@ impl<'a> Iterator for IpAddrPortCombinator<'a> {
 	}
 }
 
+#[derive(Debug)]
 pub struct CidrPortCombinator<'a> {
 	cidr: IpCidrIpAddrIterator,
 	inner: IpAddrPortCombinator<'a>
@@ -207,23 +213,36 @@ mod test {
 	
 	#[test]
 	fn cidr_generates_many() {
-		let ports = &[PortInput::from_str("1").unwrap()];
+		let ports = &[PortInput::from_str("1-5").unwrap()];
 
 		println!("PORTS: {:?}", ports);
         let data: Vec<SocketAddr> = CidrPortCombinator::new(
-			&IpCidr::from_str("127.0.0.1/30").unwrap(),
+			&IpCidr::from_str("127.0.0.1/24").unwrap(),
 			ports
 		).collect();
         
 		println!("SOCKETS: {:?}", data);
-		for ip_end in 1..4 {
-			assert!(data.contains(
-				&SocketAddr::new(
-					IpAddr::V4(Ipv4Addr::new(127, 0, 0, ip_end)),
-					1
-				)
-			))
+		// check all results showed up
+		for ip_end in 1..255 {
+			for port in 1..5 {
+				assert!(data.contains(
+					&SocketAddr::new(
+						IpAddr::V4(Ipv4Addr::new(127, 0, 0, ip_end)),
+						port
+					)
+				))
+			}
 		}
+
+		assert!(
+			!data.contains(
+				&SocketAddr::new(
+					IpAddr::V4(Ipv4Addr::new(127, 0, 1, 1)),
+					80
+				)
+			)
+		)
+
 	}
 
 	#[test]
@@ -236,5 +255,22 @@ mod test {
 		).next();
 
 		assert_eq!(data, Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127,0,0,1)), 1)));
+	}
+
+	#[test]
+	fn generator_from_cli() {
+		let ports = &[PortInput::from_str("1-5").unwrap()];
+		
+		let x = &[
+			AddressInput::CIDR(IpCidr::from_str("10.0.0.1/24").unwrap())
+		];
+		
+		let mut feed = Feeder::new(ports, x);
+		
+		let mut buf = Vec::new();
+		feed.generate_chunk(&mut buf, 8);
+
+		println!("{:?}", buf);
+		assert_eq!(buf.len(), 8)
 	}
 }

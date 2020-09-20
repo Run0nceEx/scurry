@@ -97,7 +97,7 @@ fn worker_single_in_single_out() {
 
     rt.block_on(async move {
         let mut pool = noop::NopWorker::default_test();
-        pool.fire_jobs(&mut buf);
+        pool.spawn(&mut buf);
         
         tokio::time::delay_for(std::time::Duration::from_secs(5)).await;
         let rbuf = pool.next().await.unwrap();
@@ -116,7 +116,7 @@ fn worker_job_count_accurate() {
     rt.block_on(async move {
         let mut pool = noop::NopWorker::default_test();
         
-        pool.fire_jobs(&mut buf);
+        pool.spawn(&mut buf);
         assert_eq!(pool.job_count(), 2);
         
         tokio::time::delay_for(std::time::Duration::from_secs(2)).await;
@@ -137,7 +137,7 @@ fn worker_all_in_all_out() {
         let mut pool = noop::NopWorker::default_test();
 
         assert_eq!(buf.len(), JOB_CNT);
-        pool.fire_jobs(&mut buf);
+        pool.spawn(&mut buf);
         
         tokio::time::delay_for(std::time::Duration::from_secs(5)).await;
         
@@ -183,7 +183,7 @@ fn worker_all_timeout() {
     rt.block_on(async move {
         assert_eq!(buf.len(), JOB_CNT);
         // Fire and retrieve once
-        pool.fire_jobs(&mut buf);
+        pool.spawn(&mut buf);
         assert_eq!(pool.job_count(), JOB_CNT+1);
         assert_eq!(buf.len(), 0);
         
@@ -242,7 +242,7 @@ fn evpool_poll_noop_bench(b: &mut Bencher) {
 
     let mut pool = noop::NopWorker::new(Boundary::Unlimited, std::time::Duration::from_secs(5));
     rt.block_on(async {
-        pool.fire_jobs(&mut buf)
+        pool.spawn(&mut buf)
     });
 
     b.iter(|| rt.block_on(pool.next()));
@@ -286,7 +286,7 @@ fn evpool_poll_addition_bench(b: &mut Bencher) {
     let mut pool: Worker<Handler, usize, State> = Worker::new(Boundary::Unlimited, std::time::Duration::from_secs(5));
     
     rt.block_on(async {    
-        pool.fire_jobs(&mut buf);
+        pool.spawn(&mut buf);
     });
 
     b.iter(|| rt.block_on(pool.next()));

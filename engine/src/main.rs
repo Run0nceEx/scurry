@@ -11,17 +11,14 @@ use structopt::StructOpt;
 use tokio::runtime::Runtime;
 use tracing::Level;
 use tracing_subscriber::FmtSubscriber;
-use std::net::SocketAddr;
 
 use cli::{
 	menu::Output,
 	input::{
-		parser::{ScanMethod, AddressInput, Format},
-		combine::{IpAddrPortCombinator, CidrPortCombinator, Feeder},
-		file::InputFile
+		parser::{ScanMethod, Format},
+		combine::Feeder,
 	}
 };
-use libcore::model::PortInput;
 
 fn setup_subscribers() {
 	let subscriber = FmtSubscriber::builder()
@@ -35,33 +32,8 @@ fn setup_subscribers() {
         .expect("setting default subscriber failed");
 }
 
-
-
-fn make_generator<'a>(targets: &'a [AddressInput], ports: &'a [PortInput]) -> Box<dyn Iterator<Item=SocketAddr> + 'a> {
-	//this hack did not work
-
-	let mut generators: Box<dyn Iterator<Item=SocketAddr>> = Box::new(Vec::new().into_iter());
-	
-	let mut singles = Vec::new();
-	
-	for entry in targets {
-		match entry {
-			AddressInput::CIDR(cidr) => 
-				generators = Box::new(generators.chain(CidrPortCombinator::new(&cidr, &ports))),	
-			AddressInput::Singleton(singleton) =>
-				generators = Box::new(generators.chain(IpAddrPortCombinator::new(singleton.clone(), &ports))),
-			
-			AddressInput::Pair(socket) => singles.push(socket), 
-			AddressInput::File(_name) => unimplemented!()
-		}
-	}
-	generators = Box::new(generators.chain(singles.into_iter().map(|x| *x)));
-	generators
-}
-
-
 fn main() -> Result<(), Error> {
-	cli::opt::Arguments::clap().gen_completions(env!("CARGO_PKG_NAME"), Shell::Bash, "target");
+	//cli::opt::Arguments::clap().gen_completions(env!("CARGO_PKG_NAME"), Shell::Bash, "target");
 	let opt = cli::opt::Arguments::from_args();
 
 	let mut runtime: Runtime = Runtime::new()?;
@@ -71,21 +43,19 @@ fn main() -> Result<(), Error> {
 	return runtime.block_on(async move {
 		setup_subscribers();
 		
-		let generator = make_generator(&opt.target, &opt.ports);
-		Feeder::new(&opt.ports, &opt.target);
+		//let generator = make_generator(&opt.target, &opt.ports);
+		let mut generator = Feeder::new(&opt.ports, &opt.target);
 
 		match opt.method {
-		 	ScanMethod::Open => unimplemented!(), //cli::menu::connect_scan(generator, &mut output_type).await,
+		 	ScanMethod::Open => cli::menu::connect_scan(&mut generator, &mut output_type).await,
 			ScanMethod::Socks5 => unimplemented!() // cli::menu::socks_scan(generators, &mut output_type).await
 		};
-		
-		println!("{:?}", &output_type);
 
 		if let Output::Map(map) = output_type {
 			match opt.format {
 				Format::Stdout => map.into_iter().for_each(|(key, service)| {
-					println!("{}", key);
-					service.iter().for_each(|s| println!("\t\t{}\t{}", s.port, s.state));
+					print!("{}", key);
+					service.iter().for_each(|s| println!("\t\t\t{}\t{}", s.port, s.state));
 				}),
 				Format::Json => println!("{}", serde_json::to_string_pretty(&map).unwrap()),
 				Format::Stream => unreachable!() 

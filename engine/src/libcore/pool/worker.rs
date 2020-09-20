@@ -1,23 +1,20 @@
 use super::CRON;
 
-use tokio::{
-    time::timeout,
-    stream::Stream
-};
-
 use evc::OperationCache;
-use crate::libcore::model::State as NetState;
 
 use std::{
     sync::{Arc, Mutex},
     task::{Poll, Context},
     pin::Pin,
-    net::SocketAddr
 };
 
+use tokio::{
+    time::timeout,
+    stream::Stream
+};
 
+use crate::libcore::model::State as NetState;
 use crate::libcore::util::Boundary;
-use crate::cli::input::combine::Feeder;
 
 #[derive(Clone, Debug, Default)]
 pub struct EVec<T>(pub Vec<T>);
@@ -90,15 +87,13 @@ where
 	pub fn new(throttle: Boundary, ttl: std::time::Duration) -> Self {
         const ALLOC_SIZE: usize = 16384;
 
-        let compacity = {
-            if let Boundary::Limited(n) = throttle {
-                if n > ALLOC_SIZE { n+1 }
-                else { ALLOC_SIZE }
-            }
-            else { ALLOC_SIZE }
-        };
+        let mut capacity = ALLOC_SIZE;
 
-        let (tx, rx) = evc::new(EVec::with_compacity(compacity));
+        if let Boundary::Limited(n) = throttle {
+            if n > ALLOC_SIZE { capacity = n+1 }
+        }
+        
+        let (tx, rx) = evc::new(EVec::with_compacity(capacity));
 
         let instance = Self {
             throttle,
@@ -112,17 +107,22 @@ where
     }
 
 
-    fn calc_new_spawns(&self, buf_len: usize) -> usize {
+    pub fn calc_new_spawns(&self, buf_len: usize) -> usize {
         let limit = match self.throttle {
             Boundary::Limited(limit) => limit, 
             Boundary::Unlimited => return buf_len
         };
 
-        if limit >= self.job_count() {
-            let mut spawn_count = limit-self.job_count();
+        let current_count = self.job_count();
+
+        if limit >= current_count {
+            let mut spawn_count = limit - current_count;
+            
+            // NOTE ME
             if spawn_count > buf_len {
                 spawn_count = buf_len
             }
+            // dbg!(spawn_count);
 
             return spawn_count
         }
@@ -135,46 +135,24 @@ where
         std::sync::Arc::strong_count(&self.tx)
     }
     
-    #[inline]
-    pub fn throttled(&self) -> Boundary {
-        self.throttle
-    }
-
-    
-    pub fn fire_jobs(&mut self, buf: &mut Vec<S>) -> usize {
-        let mut amount = 0;
-        for state in buf.drain(..) {
-            amount += 1;
-            spawn_worker::<J, R, S>(self.tx.clone(), state, self.ttl)
-        }
-        amount
-    }
-
-    pub fn throttle_fire(&mut self, buf: &mut Vec<S>) -> usize 
+    /// spawn threads based on pool limiter
+    pub fn spawn(&mut self, buf: &mut Vec<S>) -> usize 
     {
-        let new_spawn_count = self.calc_new_spawns(buf.len());
-
-        if new_spawn_count > 0 {
-            for state in buf.drain(..new_spawn_count) {
+        let spawn_limit = self.calc_new_spawns(buf.len());
+        dbg!(spawn_limit);
+        
+        if spawn_limit > 0 {
+            for state in buf.drain(..spawn_limit) {
                 spawn_worker::<J, R, S>(self.tx.clone(), state, self.ttl)
             }
         }
 
-        new_spawn_count
+        spawn_limit
     }
 
-    pub fn throttle_feed_fire<'a>(&mut self, buf: &mut Vec<S>, feed: &mut Feeder<'a>) -> usize
-    where S: From<SocketAddr>
+    /// attempt to flush data out of `tx` and `rx`
+    pub fn flush(&mut self) -> Vec<(JobCtrl<R>, S)>
     {
-        let mut sock_buf = Vec::new();
-        let amount = feed.generate_chunk(&mut sock_buf, self.calc_new_spawns(buf.len()));
-
-        buf.extend(sock_buf.drain(..).map(|x| x.into()));
-        
-        self.throttle_fire(buf)
-    }
-
-    pub fn flush(&mut self) -> Vec<(JobCtrl<R>, S)> {
         let mut lock = self.tx.lock().unwrap();
         let mut buffer = self.rx.read().0.clone();
         lock.refresh();
@@ -183,6 +161,16 @@ where
         lock.refresh();
         buffer
     }
+
+    /// wait until all work is done before attempting to flush `rx` and `tx`
+    pub async fn flush_all(&mut self) -> Vec<(JobCtrl<R>, S)> {
+        while self.job_count()-1 > 0 {
+            tokio::time::delay_for(std::time::Duration::from_secs(2)).await;
+        }
+
+        self.flush()
+    }
+
 }
 
 

@@ -15,7 +15,7 @@ pub struct Arguments {
     /// Enable debugging all targets by using "ALL", or specify with a list of named targets.
     pub debug_target: Vec<String>,
     
-    #[structopt(parse(try_from_str = address_parser), short, long)]
+    #[structopt(parse(try_from_str = address_parser), short = "-t", long)]
     /// Target IP addresses, supports IPv4 and IPv6. Accepts Accepts a sequence of IPs "10.0.0.1" and CIDR "10.0.0.1/24"
     pub target: Vec<AddressInput>,
 
