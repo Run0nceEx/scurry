@@ -1,14 +1,13 @@
-use super::libcore::error::Error as LibError;
+use tokio::time::Error as TimeError;
+use std::io::ErrorKind as IoKind;
+use serde::ser::SerializeStructVariant;
+
 
 #[derive(Debug)]
 pub enum Error {
-    CoreError(LibError),
-    
-    IO(std::io::Error),   
-    CliError(String),
-    IntParseError(std::num::ParseIntError),
-    AddrParseError(std::net::AddrParseError),
-    AddrParseErrorCIDR(cidr_utils::cidr::IpCidrError)
+    TimeCacheError(TimeError),
+    IO(std::io::Error),
+    RangeError,
 }
 
 impl From<std::io::Error> for Error {
@@ -17,28 +16,54 @@ impl From<std::io::Error> for Error {
     }
 }
 
-impl From<cidr_utils::cidr::IpCidrError> for Error {
-    fn from(x: cidr_utils::cidr::IpCidrError) -> Self {
-        Self::AddrParseErrorCIDR(x)
+impl From<TimeError> for Error {
+    fn from(x: TimeError) -> Self {
+        Self::TimeCacheError(x)
     }
 }
 
-impl From<std::net::AddrParseError> for Error {
-    fn from(x: std::net::AddrParseError) -> Self {
-        Self::AddrParseError(x)
-    }
-}
-
-impl From<std::num::ParseIntError> for Error {
-    fn from(x: std::num::ParseIntError) -> Self {
-        Self::IntParseError(x)
-    }
-}
 
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{:?}", self)
     }
 }
+
+use serde::{Serialize, Serializer, ser::SerializeStruct};
+
+impl Serialize for Error {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        // 3 is the number of fields in the struct.
+        match self {
+            Error::IO(e) => {
+                match e.kind() {
+                    IoKind::Other => {
+                        e.raw_os_error();
+                        
+                        let mut sv = serializer.serialize_struct_variant("Error", 0, "IO", 1)?;
+
+                        //state.serialize_struct_variant("Error", &self.r)?;
+
+                        sv.end();
+
+                        unimplemented!()
+                    }
+                    _ => unimplemented!()
+                }
+            }
+            _ => unimplemented!()
+        }
+        
+        // state.serialize_field("r", &self.r)?;
+        // state.serialize_field("g", &self.g)?;
+        // state.serialize_field("b", &self.b)?;
+        
+        //state.end()
+    }
+}
+
 
 impl std::error::Error for Error {}
