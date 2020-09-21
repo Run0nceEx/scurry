@@ -1,11 +1,15 @@
 #![feature(test)]
 
 mod cli;
-mod libcore;
+
+mod discovery;
+mod pool;
+mod error;
+mod util;
+mod model;
 
 use crate::cli::error::Error;
 
-use structopt::clap::Shell;
 use structopt::StructOpt;
 
 use tokio::runtime::Runtime;
@@ -43,7 +47,6 @@ fn main() -> Result<(), Error> {
 	return runtime.block_on(async move {
 		setup_subscribers();
 		
-		//let generator = make_generator(&opt.target, &opt.ports);
 		let mut generator = Feeder::new(&opt.ports, &opt.target);
 
 		match opt.method {

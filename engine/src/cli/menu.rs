@@ -6,12 +6,10 @@ use std::{
 };
 
 use crate::{
-	libcore::{
-		discovery::service::connect_scan::OpenPortJob,
-		pool::{Worker, Pool, CRON, JobCtrl, JobErr},
-		util::{Boundary, get_max_fd},
-		model::{Service, State as NetState},
-	},
+	discovery::service::connect_scan::OpenPortJob,
+	pool::{Worker, Pool, CRON, JobCtrl, JobErr},
+	util::{Boundary, get_max_fd},
+	model::{Service, State as NetState},
 	cli::input::{parser, combine}
 };
 
@@ -61,7 +59,6 @@ impl Output {
 			Output::Stream => {
 				for (sig, state) in buf {
 					let sock = state.cast();
-
 					match sig {
 						JobCtrl::Return(netstate, _resp) => println!("{}\t{}\t{}", sock.ip(), sock.port(), netstate),	
 						JobCtrl::Error(err) => eprintln!("unable to run {:?}:[{:?}]", err, sig)

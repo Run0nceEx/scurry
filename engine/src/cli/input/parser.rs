@@ -4,7 +4,7 @@ use std::{
 };
 
 use serde::Serialize;
-use crate::libcore::model::{PortInput, Host};
+use crate::model::PortInput;
 use cidr_utils::cidr::IpCidr;
 use crate::cli::error::Error;
 
