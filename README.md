@@ -27,9 +27,21 @@ feature | integrated
 --- | ---
 Version Detection | N/A
 Compatible witth Nmap scripts (luaJIT) | N/A
-Database Hooks | N/A
 Apache Zookeeper Adaptor | N/A
 OSI Layer 4 Scanner | N/A
+Library interface | N/A
+
+#### Version detection
+When this feature is added, it should be able to determine services running behind ports, including versions and version ranges.
+
+#### Compatiable with nmap scripts
+After we implement probing and discovering capabilities, we sometimes want more information about a service, which includes inter-operating with it. Allowing lua scripts to write custom handlers, we also should support nmap scripts.
+
+#### Apache Zookeeper adaptor
+Adding zookeeper should let us take and push results into zookeeper, which in turn allows us to provide cluster computations.
+
+#### Library Interface
+Adding a library interface for programmically running the engine is a very far goal, but would allow people to programmically use this tool in their own services.
 
 ##  Compiling
 https://rustup.rs/ (Install compiler)
@@ -37,7 +49,7 @@ https://rustup.rs/ (Install compiler)
 git clone https://github.com/Skarlett/scurry
 cd scurry
 cargo build --release
-mv target/release/px-engine .
+mv target/release/px-engine $PWD
 ```
 
 ## Usage 
