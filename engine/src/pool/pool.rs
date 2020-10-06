@@ -37,7 +37,7 @@ where
 
     #[inline]
     pub fn is_working(&self) -> bool {
-        self.pool.job_count()-1 > 0 && self.stash.amount() > 0  
+        self.pool.job_count() > 1 && self.stash.amount() > 0  
     }
 
     #[inline]
@@ -61,6 +61,7 @@ where
 
         let mut sock_buf = Vec::with_capacity(4001);
         feed.generate_chunk(&mut sock_buf, 4000);
+        
         queued.extend(sock_buf.drain(..).map(|x| x.into()));
 
         let alloc_amt = self.pool.calc_new_spawns(queued.len());

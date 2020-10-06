@@ -22,6 +22,10 @@ features = ["derive"]
 version = "1.4"
 features = ["serde"]
 
+[dependencies.regex]
+version = "1"
+features = ["perf"]
+
 [dependencies]
 # In-use dependencies
 tracing = "0.1"
@@ -33,6 +37,8 @@ rand = "0.7"
 cidr-utils = "0.5"
 structopt = "0.3"
 serde_json = "1.0"
+num_cpus = "1.13"
+tokio-native-tls = "0.1"
 
 # Dependency conflict patches
 syn = "^1.0.33"

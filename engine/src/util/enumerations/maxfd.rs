@@ -16,7 +16,7 @@ impl std::fmt::Display for Boundary {
     }
 }
 
-pub fn get_max_fd() -> Result<Boundary, Box<std::error::Error>> {
+pub fn get_max_fd() -> Result<Boundary, Box<dyn std::error::Error>> {
     const INDICATOR: &'static str = "Max open files";
 
     let mut fd = BufReader::new(File::open("/proc/self/limits")?);

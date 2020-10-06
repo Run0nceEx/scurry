@@ -159,7 +159,7 @@ where
 
     /// wait until all work is done before attempting to flush `rx` and `tx`
     pub async fn flush_all(&mut self) -> Vec<(JobCtrl<R>, S)> {
-        while self.job_count()-1 > 0 {
+        while self.job_count() > 1 {
             tokio::time::delay_for(std::time::Duration::from_secs(2)).await;
         }
 

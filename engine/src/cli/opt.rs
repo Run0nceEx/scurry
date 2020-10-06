@@ -6,14 +6,10 @@ use crate::model::PortInput;
 #[derive(Debug, StructOpt)]
 #[structopt(about = "Port scanner")]
 pub struct Arguments {
-    
+
     #[structopt(long, short = "-fmt", default_value = "stdout")]
     /// Specify output format
     pub format: Format,
-
-    #[structopt(long = "--debug-trace", short, env = "SCURRY_DEBUG")]
-    /// Enable debugging all targets by using "ALL", or specify with a list of named targets.
-    pub debug_target: Vec<String>,
     
     #[structopt(parse(try_from_str = address_parser), short = "-t", long)]
     /// Target IP addresses, supports IPv4 and IPv6. Accepts Accepts a sequence of IPs "10.0.0.1" and CIDR "10.0.0.1/24"
@@ -30,5 +26,21 @@ pub struct Arguments {
     #[structopt(short, long, default_value = "open")]
     /// choice of handler used
     pub method: ScanMethod,
+
+    #[structopt(long)]
+    pub threads: Option<usize>,
+
+    #[structopt(parse(from_occurrences))]
+    pub verbose: u8,
+
+    #[structopt(long, default_value = "5", env = "SCURRY_TIMEOUT")]
+    /// Specify output format
+    pub timeout: f32,
+
+    //#[structopt(long = "--verify-tls", env = "SCURRY_VERIFY_TLS")]
+    // Specify output format
+    // pub verify_tls: bool,
+
+
 
 }

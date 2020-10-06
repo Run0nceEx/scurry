@@ -26,8 +26,16 @@ impl std::fmt::Display for State {
 pub struct Service {
     pub port: u16,
     pub state: State,
+
 }
 
+
+#[derive(Debug, Eq, PartialEq, Hash, Clone, Copy, Serialize)]
+pub struct ServiceTest<T: Serialize> {
+    pub port: u16,
+    pub state: State,
+    pub data: T
+}
 
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

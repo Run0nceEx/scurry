@@ -5,17 +5,15 @@ use crate::{
 };
 
 use tokio::net::TcpStream;
-use std::{net::SocketAddr};
+use std::net::SocketAddr;
 use super::handle_io_error;
 
 
-
-
 #[derive(Debug)]
-pub struct OpenPortJob;
+pub struct TcpProbe;
 
 #[async_trait::async_trait]
-impl CRON for OpenPortJob
+impl CRON for TcpProbe
 {
     type State = SocketAddr;
     type Response = SocketAddr;
@@ -26,6 +24,7 @@ impl CRON for OpenPortJob
             Ok(_) => Ok(JobCtrl::Return(State::Open, *state)),
 
             Err(Error::IO(err)) => Ok(JobCtrl::Error(handle_io_error(err))),
+            
             Err(e) => {
                 eprintln!("unmatched error {:#?} [not io error]", e);
                 Ok(JobCtrl::Error(JobErr::Other))
