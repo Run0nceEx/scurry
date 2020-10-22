@@ -1,11 +1,5 @@
 #![feature(test)]
-
-mod error;
-mod model;
-mod pool;
-mod util;
-
-mod netlib;
+use netcore::netlib;
 mod cli;
 
 use crate::cli::error::Error;
@@ -21,7 +15,6 @@ use cli::{
 		combine::Feeder,
 	}
 };
-
 
 fn main() -> Result<(), Error> {
 	//cli::opt::Arguments::clap().gen_completions(env!("CARGO_PKG_NAME"), Shell::Bash, "target");
