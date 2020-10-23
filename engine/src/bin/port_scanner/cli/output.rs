@@ -4,11 +4,12 @@ use std::{
 	fmt::Debug
 };
 
-use crate::{
+use netcore::{
 	model::{State as NetState, Service},
-	cli::input::parser,	
-	pool::JobCtrl
+	pool::JobCtrl,
 };
+
+use crate::cli::input::parser;
 
 #[derive(Debug)]
 pub enum OutputType {

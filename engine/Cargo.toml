@@ -5,6 +5,18 @@ authors = ["Skarlett"]
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+name = "netcore"
+
+#[features]
+#default = []
+#lua = "mlua"
+
+
+#[dependencies.mlua]
+#version = "0.4"
+#optional = true
+#features = ["lua53"]
 
 [dependencies.uuid]
 version = "0.8"

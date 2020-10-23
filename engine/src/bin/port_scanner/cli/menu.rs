@@ -4,7 +4,7 @@ use std::{
 	
 };
 
-use crate::{
+use netcore::{
 	netlib::probe::{
 		tcp::TcpProbe,
 		//socks5::{Socks5Scanner, ScanResult}
@@ -12,16 +12,11 @@ use crate::{
 	pool::{Worker, Pool, CRON, JobErr},
 	util::{Boundary, get_max_fd},
 	model::{State as NetState},
-	cli::{input::combine, output::OutputType},
 };
 
-const TICK_NS: u64 = 500;
+use crate::cli::{input::combine, output::OutputType};
 
-impl From<JobErr> for NetState {
-	fn from(x: JobErr) -> NetState {
-		NetState::Closed
-	}
-}
+const TICK_NS: u64 = 500;
 
 pub async fn connect_scan<'a>(generator: &mut combine::Feeder<'a>, results: &mut OutputType, timeout: Duration)
 {
@@ -30,7 +25,8 @@ pub async fn connect_scan<'a>(generator: &mut combine::Feeder<'a>, results: &mut
 	
 	loop {
 		if !generator.is_done() {
-			pool.fire_from_feeder(&mut buffer, generator).await;
+			eprintln!("TODO");
+			//pool.fire_from_feeder(&mut buffer, generator).await;
 		}
 		
 		let jobs_done = pool.tick(&mut buffer).await;	

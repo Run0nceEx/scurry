@@ -5,9 +5,16 @@ use serde::ser::SerializeStructVariant;
 
 #[derive(Debug)]
 pub enum Error {
+    ParseError(String),
     TimeCacheError(TimeError),
     IO(std::io::Error),
     RangeError,
+}
+
+impl From<std::num::ParseIntError> for Error {
+    fn from(x: std::num::ParseIntError) -> Self {
+        Self::ParseError(x.to_string())
+    }
 }
 
 impl From<std::io::Error> for Error {

@@ -56,6 +56,11 @@ pub enum JobErr {
     Other
 }
 
+impl From<JobErr> for NetState {
+	fn from(x: JobErr) -> NetState {
+		NetState::Closed
+	}
+}
 
 #[derive(Debug, Clone)]
 pub enum JobCtrl<R> {

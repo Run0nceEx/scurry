@@ -1,7 +1,8 @@
 use structopt::StructOpt;
 use super::input::parser::*;
 
-use crate::model::PortInput;
+use netcore::model::{PortInput, port_parser};
+use std::str::FromStr;
 
 #[derive(Debug, StructOpt)]
 #[structopt(about = "Port scanner")]
@@ -15,11 +16,11 @@ pub struct Arguments {
     /// Target IP addresses, supports IPv4 and IPv6. Accepts Accepts a sequence of IPs "10.0.0.1" and CIDR "10.0.0.1/24"
     pub target: Vec<AddressInput>,
 
-    /// Exclude by IP/cidr address
     #[structopt(parse(try_from_str = address_parser), short = "-x", long)]
+    /// Exclude by IP/cidr address
     pub exclude: Vec<AddressInput>,
 
-    #[structopt(long, short)]
+    #[structopt(parse(try_from_str = port_parser), long, short)]
     /// Ranges of ports you'd like to scan on every IP, Accepts a sequence of numbers "80" and ranges "8000-10000"
     pub ports: Vec<PortInput>,
 
@@ -28,10 +29,12 @@ pub struct Arguments {
     pub method: ScanMethod,
 
     #[structopt(long)]
+    // amount of threads (defaults to core count)
     pub threads: Option<usize>,
 
-    #[structopt(parse(from_occurrences))]
-    pub verbose: u8,
+    // #[structopt(parse(from_occurrences)), short]
+    // // unused currently
+    // pub verbose: u8,
 
     #[structopt(long, default_value = "5", env = "SCURRY_TIMEOUT")]
     /// Specify output format
