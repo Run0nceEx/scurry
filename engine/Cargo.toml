@@ -22,6 +22,9 @@ name = "netcore"
 version = "0.8"
 features = ["v4"]
 
+[dependencies.anymap]
+version = "*"
+
 [dependencies.tokio]
 version = "0.2.22"
 features = ["parking_lot", "full"]

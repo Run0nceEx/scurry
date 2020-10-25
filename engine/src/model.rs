@@ -43,6 +43,15 @@ pub enum PortInput {
     Range(std::ops::Range<u16>)
 }
 
+impl PortInput {
+    pub fn contains(&self, other: u16) -> bool {
+        match self {
+            PortInput::Singleton(s) => *s == other,
+            PortInput::Range(rng) => rng.contains(&other)
+        }
+    }
+}
+
 impl std::str::FromStr for PortInput {
     type Err = Error;
 

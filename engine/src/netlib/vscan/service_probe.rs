@@ -1,9 +1,11 @@
 use crate::model::PortInput;
 use std::{
     collections::HashMap,
-    io::{BufRead, BufReader, Read}
+    io::{BufRead, BufReader, Read},
+    str::FromStr
 };
-use regex::Regex;
+use regex::RegexSet;
+
 
 /*
 ##############################NEXT PROBE##############################
@@ -19,22 +21,19 @@ match ubiquiti-discovery m|^\x02[\x06\x09\x0b].[^\0].*\x15\0.([\w-]+)\x16\0.([\d
 match ubiquiti-discovery m|^\x02[\x06\x09\x0b].[^\0].*\x15\0.([\w-]+)|s p/Ubiquiti Discovery Service/ i/v2 protocol, $1/
 softmatch ubiquiti-discovery m|^\x02[\x06\x09\x0b].[^\0].{48}|s p/Ubiquiti Discovery Service/ i/v2 protocol/
 */
-
-// god i love null ptr optimization
+#[derive(Default, Debug)]
 struct CPE {
     part: String,
     vendor: String,
     product: String,
     OS: String,
 
-    
-    // info: String>,
-    // table: Option<String>,
 }
 
-enum RegexCapture {
-    SoftMatch(String, Option<CPE>),
-    Match(String, Option<CPE>)
+#[derive(Debug)]
+enum MatchExpr {
+    SoftMatch,
+    Match
 }
 
 /*
@@ -51,60 +50,138 @@ match apollo-server m=^0000000001(?:3C|C0)0000$= p/Apollo Server database access
 Probe <Protocol> <Probe-Name> q|<send-data>|
 rarity <num>
 
-match|softmatch <name> m<recv-pattern> [<version-info>]
+match|softmatch <resp-name> m<recv-pattern> [<cpe>]
 
 */
+#[derive(Debug)]
+struct MatchLineExpr {
+    pattern: String,
+    match_type: MatchExpr,
+    name: String,
+    cpe: CPE
+}
 
-
+#[derive(Debug)]
 enum Protocol {
     TCP,
     UDP,
 }
 
-struct ParsedProbe {
+impl Default for Protocol {
+    fn default() -> Self {
+        Protocol::TCP
+    }
+}
+
+
+#[derive(Default, Debug)]
+struct ProbeExpr {
     proto: Protocol,// TCP/UDP
-    name: String,
+    payload: String,
     rarity: u8,
-
-    ports: Vec<PortInput>,
-    sslports: Vec<PortInput>,
-                                        
-    response_names: HashMap<String, Vec<String, >>,
-    //fallback: Option<Rc<RefCell<Probe>>>
-}
-
-
-struct PartialParsedProbe {
-    proto: Option<Protocol>,// TCP/UDP
-    rarity: Option<u8>,
-    
     name: String,
     ports: Vec<PortInput>,
-    sslports: Vec<PortInput>,                                    
-    response_names: HashMap<String, Vec<Regex>>,
+    exclude: Vec<PortInput>,
+    tls_ports: Vec<PortInput>,
+    patterns: Vec<MatchLineExpr>,
+    fallback: Option<String>,
+
 }
 
 
+impl FromStr for ProbeExpr {
+    type Err = ();
 
-fn parse_file<T: Read>(fd: &mut BufReader<T>) -> Vec<ParsedProbe> {
-    const DELIMITER: &'static str = "\
-    ##############################\
-    NEXT PROBE\
-    ##############################";
+    fn from_str(x: &str) -> Result<ProbeExpr, Self::Err> {
+        unimplemented!()
+    }
+}
+
+#[derive(Default, Debug)]
+struct Match {
+    name: String,
+    cpe: CPE
+}
+
+struct Probe {
+    proto: Protocol,// TCP/UDP
+    payload: Vec<u8>,
+    rarity: u8,
+    //name: String,
+    ports: Vec<PortInput>,
+    exclude: Vec<PortInput>,
+    tls_ports: Vec<PortInput>,
+
+    //so here we have a flat map where we'll do a quick match on, 
+    //where we get a collection of indexes matched, we'll take those 
+    patterns: RegexSet,
+    //and look them up here
+    cpe_lookup: Vec<Match>,
+}
+
+
+struct ProbeEntry {
+    inner: Probe,
+    fallback: Option<String>
+}
+
+
+pub struct VersionScanEngine(HashMap<String, ProbeEntry>);
+const DELIMITER: &'static str = "##############################NEXT PROBE##############################";
+
+fn parse_txt_db<T: Read>(fd: &mut BufReader<T>) -> Result<(), std::io::Error> {
     
     let mut line_buf = String::new();
-    let mut result = Vec::new();
-    let mut working_entity: ParsedProbe; 
+    let mut linker_buf = Vec::new();
+    
+    let mut entity = ProbeExpr::default();
+    // parse line by line
+    while fd.read_line(&mut line_buf)? > 0 {
+        
+        // if probe delimiter reached, attempt to make a `ProbeEntry` out of `ProbeExpr`
+        if line_buf.contains(&DELIMITER) {
+            if entity.name.len() > 0 && entity.payload.len() > 0 {           
+                let (re_set, cpe_map) = construct_regex(&entity.patterns);
+                let payload = construct_payload(&entity.payload);
+                let probe = Probe {
+                    proto: entity.proto,
+                    rarity: entity.rarity,
+                    ports: entity.ports,
+                    exclude: entity.exclude,
+                    tls_ports: entity.tls_ports,
+                    patterns: re_set,
+                    cpe_lookup: cpe_map,
+                    payload
+                    
+                };
 
-    while let Ok(n) = fd.read_line(&mut line_buf) {
-        if n == 0 || line_buf.contains(DELIMITER) { break }
-        
-        
-        
-        line_buf.clear()
+                linker_buf.push((entity.name, entity.fallback, probe));
+                entity = ProbeExpr::default();
+            }
+            
+        }
+
+        line_buf.clear();
     }
-        result
+    // ensure no probes are named the same
+    linker_buf.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+
+    Ok(())
 }
+
+fn construct_regex(patterns: &[MatchLineExpr]) -> (RegexSet, Vec<Match>) {
+    unimplemented!()
+}
+
+fn construct_payload(x: &str) -> Vec<u8> {
+    unimplemented!()
+}
+
+fn assert_fallbacks() {
+
+}
+
+
 
 /*
     SF-Port21-TCP:V=3.40PVT16%D=9/6%Time=3F5A961C%r(NULL,3F,"220\x20stage\x20F
@@ -128,6 +205,6 @@ struct ServiceFingerPrint {
 }
 
 // needs to take all the probes and link their fallbacks correctly
-fn linker<T: BufRead>(probes: Vec<ParsedProbe>) {
+// fn linker<T: BufRead>(probes: Vec<ParsedProbe>) {
 
-}
+// }
