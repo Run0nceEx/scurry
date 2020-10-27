@@ -2,10 +2,31 @@ use crate::model::PortInput;
 use std::{
     collections::HashMap,
     io::{BufRead, BufReader, Read},
-    str::FromStr
+    str::FromStr,
+    time::Duration,
 };
-use regex::RegexSet;
+use regex::bytes::RegexSet;
+use super::engine::{CPE};
 
+#[derive(Debug)]
+enum Error {
+    IO(std::io::Error),
+    ParsingError {
+        line_count: usize,
+        //token: Token
+    }
+}
+
+impl From<std::io::Error> for Error {
+    fn from(x: std::io::Error) -> Error {
+        Error::IO(x)
+    }
+}
+
+
+// impl std::fmt::Display for Error {
+ 
+// }
 
 /*
 ##############################NEXT PROBE##############################
@@ -21,20 +42,6 @@ match ubiquiti-discovery m|^\x02[\x06\x09\x0b].[^\0].*\x15\0.([\w-]+)\x16\0.([\d
 match ubiquiti-discovery m|^\x02[\x06\x09\x0b].[^\0].*\x15\0.([\w-]+)|s p/Ubiquiti Discovery Service/ i/v2 protocol, $1/
 softmatch ubiquiti-discovery m|^\x02[\x06\x09\x0b].[^\0].{48}|s p/Ubiquiti Discovery Service/ i/v2 protocol/
 */
-#[derive(Default, Debug)]
-struct CPE {
-    part: String,
-    vendor: String,
-    product: String,
-    OS: String,
-
-}
-
-#[derive(Debug)]
-enum MatchExpr {
-    SoftMatch,
-    Match
-}
 
 /*
 ##############################NEXT PROBE##############################
@@ -53,19 +60,27 @@ rarity <num>
 match|softmatch <resp-name> m<recv-pattern> [<cpe>]
 
 */
+
+#[derive(Debug)]
+pub enum Protocol {
+    TCP,
+    UDP
+}
+
+#[derive(Debug)]
+enum MatchType {
+    SoftMatch,
+    Match
+}
+
 #[derive(Debug)]
 struct MatchLineExpr {
     pattern: String,
-    match_type: MatchExpr,
+    match_type: MatchType,
     name: String,
     cpe: CPE
 }
 
-#[derive(Debug)]
-enum Protocol {
-    TCP,
-    UDP,
-}
 
 impl Default for Protocol {
     fn default() -> Self {
@@ -89,21 +104,14 @@ struct ProbeExpr {
 }
 
 
-impl FromStr for ProbeExpr {
-    type Err = ();
-
-    fn from_str(x: &str) -> Result<ProbeExpr, Self::Err> {
-        unimplemented!()
-    }
-}
-
 #[derive(Default, Debug)]
-struct Match {
+pub struct Match {
     name: String,
     cpe: CPE
 }
 
-struct Probe {
+#[derive(Debug)]
+pub struct Probe {
     proto: Protocol,// TCP/UDP
     payload: Vec<u8>,
     rarity: u8,
@@ -114,64 +122,145 @@ struct Probe {
 
     //so here we have a flat map where we'll do a quick match on, 
     //where we get a collection of indexes matched, we'll take those 
-    patterns: RegexSet,
-    //and look them up here
-    cpe_lookup: Vec<Match>,
+    lookup_set: AlignedSet,
 }
 
+impl Probe {
+    fn matches<'a>(&'a self, input_buf: &[u8], out_buf: &mut Vec<&'a Match>) {
+        self.lookup_set.match_response(input_buf, out_buf)
+    }
+}
 
 struct ProbeEntry {
     inner: Probe,
     fallback: Option<String>
 }
 
+pub struct LinkedProbes(HashMap<String, ProbeEntry>);
 
-pub struct VersionScanEngine(HashMap<String, ProbeEntry>);
+
+
 const DELIMITER: &'static str = "##############################NEXT PROBE##############################";
 
-fn parse_txt_db<T: Read>(fd: &mut BufReader<T>) -> Result<(), std::io::Error> {
+fn parse_txt_db<T: Read>(fd: &mut BufReader<T>) -> Result<LinkedProbes, Error> {
     
-    let mut line_buf = String::new();
     let mut linker_buf = Vec::new();
     
+    let mut line_buf = String::new();
     let mut entity = ProbeExpr::default();
     // parse line by line
     while fd.read_line(&mut line_buf)? > 0 {
-        
         // if probe delimiter reached, attempt to make a `ProbeEntry` out of `ProbeExpr`
         if line_buf.contains(&DELIMITER) {
-            if entity.name.len() > 0 && entity.payload.len() > 0 {           
-                let (re_set, cpe_map) = construct_regex(&entity.patterns);
-                let payload = construct_payload(&entity.payload);
-                let probe = Probe {
-                    proto: entity.proto,
-                    rarity: entity.rarity,
-                    ports: entity.ports,
-                    exclude: entity.exclude,
-                    tls_ports: entity.tls_ports,
-                    patterns: re_set,
-                    cpe_lookup: cpe_map,
-                    payload
-                    
-                };
-
-                linker_buf.push((entity.name, entity.fallback, probe));
+            if entity.name.len() > 0 && entity.payload.len() > 0 {
+                linker_buf.push(construct_probe(entity));
                 entity = ProbeExpr::default();
             }
-            
         }
 
         line_buf.clear();
     }
-    // ensure no probes are named the same
-    linker_buf.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
 
-    Ok(())
+    Ok(link_probes(&mut linker_buf))
 }
 
-fn construct_regex(patterns: &[MatchLineExpr]) -> (RegexSet, Vec<Match>) {
-    unimplemented!()
+
+fn link_probes(buf: &mut Vec<(String, Option<String>, Probe)>) -> LinkedProbes {
+    let mut map = HashMap::new();
+    for item in buf.drain(..) {
+        let name = item.0;
+        let entry = ProbeEntry {
+            fallback: item.1,
+            inner: item.2
+        };
+
+        if let Some(x) = map.insert(name, entry) {
+            dbg!("got duplicate key in probe names: {}", x);
+        }
+    }
+    
+    
+    map.iter().filter_map(|(k, v)| {
+        // Drop anything that links to nothing
+        if let Some(fallback) = v.fallback {
+            if k.len() <= 2 || k.len() > 64 {
+                return None;
+            }
+
+            if !map.contains_key(&fallback) {
+                dbg!("fallback doesn't exist: {} -> {}", k, fallback);
+                return None;
+            }
+            
+            return Some((k, v));
+        }
+
+        return Some((k, v))
+    });
+
+    LinkedProbes(map)
 }
+
+#[derive(Debug)]
+struct AlignedSet {
+    set: RegexSet,
+    map: Vec<Match>
+}
+
+impl AlignedSet {
+    pub fn match_response<'a>(&'a self, input_buf: &[u8], out_buf: &mut Vec<&'a Match>) {
+        let indexes: Vec<_> = self.set
+            .matches(input_buf)
+            .into_iter()
+            .collect();
+        
+        for i in indexes {
+            out_buf.push(self.map.get(i).unwrap());
+        }
+
+    }
+}
+
+fn align_regex_set(patterns: &[MatchLineExpr]) -> Result<AlignedSet, regex::Error> {
+    // ALIGNED INDEXES
+    // -- self.patterns
+    // -- self.cpe_lookup
+    
+    let mut regex_buf = Vec::new();
+    let mut mapping = Vec::new();
+
+    for item in patterns {
+        regex_buf.push(item.pattern);
+        
+        mapping.push(Match {
+            name: item.name,
+            cpe: item.cpe
+        })
+    }
+
+    Ok(AlignedSet {
+        set: RegexSet::new(regex_buf)?,
+        map: mapping
+    })
+}
+
+#[inline]
+fn construct_probe(entity: ProbeExpr) -> (String, Option<String>, Probe) 
+{
+    let aset = align_regex_set(&entity.patterns).unwrap();
+    let payload = construct_payload(&entity.payload);
+    let probe = Probe {
+        proto: entity.proto,
+        rarity: entity.rarity,
+        ports: entity.ports,
+        exclude: entity.exclude,
+        tls_ports: entity.tls_ports,
+        lookup_set: aset,
+        payload
+    };
+    (entity.name, entity.fallback, probe)
+}
+
 
 fn construct_payload(x: &str) -> Vec<u8> {
     unimplemented!()
