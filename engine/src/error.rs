@@ -13,9 +13,19 @@ pub enum Error {
 
 impl From<std::num::ParseIntError> for Error {
     fn from(x: std::num::ParseIntError) -> Self {
+        //kind of hacky but works
+        Self::ParseError(x.to_string())
+    }
+
+}
+
+impl From<std::num::ParseFloatError> for Error {
+    fn from(x: std::num::ParseFloatError) -> Self {
+        //kind of hacky but works
         Self::ParseError(x.to_string())
     }
 }
+
 
 impl From<std::io::Error> for Error {
     fn from(x: std::io::Error) -> Self {
@@ -33,42 +43,6 @@ impl From<TimeError> for Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{:?}", self)
-    }
-}
-
-use serde::{Serialize, Serializer, ser::SerializeStruct};
-
-impl Serialize for Error {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        // 3 is the number of fields in the struct.
-        match self {
-            Error::IO(e) => {
-                match e.kind() {
-                    IoKind::Other => {
-                        e.raw_os_error();
-                        
-                        let mut sv = serializer.serialize_struct_variant("Error", 0, "IO", 1)?;
-
-                        //state.serialize_struct_variant("Error", &self.r)?;
-
-                        sv.end();
-
-                        unimplemented!()
-                    }
-                    _ => unimplemented!()
-                }
-            }
-            _ => unimplemented!()
-        }
-        
-        // state.serialize_field("r", &self.r)?;
-        // state.serialize_field("g", &self.g)?;
-        // state.serialize_field("b", &self.b)?;
-        
-        //state.end()
     }
 }
 

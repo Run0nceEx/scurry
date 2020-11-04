@@ -1,7 +1,8 @@
+use crate::cli::{input::combine, output::OutputType};
+
 use std::{
 	net::SocketAddr,
 	time::Duration,
-	
 };
 
 use netcore::{
@@ -14,8 +15,6 @@ use netcore::{
 	model::{State as NetState},
 };
 
-use crate::cli::{input::combine, output::OutputType};
-
 const TICK_NS: u64 = 500;
 
 pub async fn connect_scan<'a>(generator: &mut combine::Feeder<'a>, results: &mut OutputType, timeout: Duration)
@@ -26,6 +25,7 @@ pub async fn connect_scan<'a>(generator: &mut combine::Feeder<'a>, results: &mut
 	loop {
 		if !generator.is_done() {
 			eprintln!("TODO");
+			return unimplemented!();
 			//pool.fire_from_feeder(&mut buffer, generator).await;
 		}
 		

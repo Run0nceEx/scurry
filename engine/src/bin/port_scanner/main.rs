@@ -1,5 +1,4 @@
 #![feature(test)]
-use netcore::netlib; 
 mod cli;
 
 use crate::cli::error::Error;
@@ -31,17 +30,20 @@ fn main() -> Result<(), Error> {
 		let mut generator = Feeder::new(&opt.ports, &opt.target, &opt.exclude);
 
 		match opt.method {
-		 	ScanMethod::Open => cli::menu::connect_scan(
+		 	ScanMethod::Complete { wait_flag } => cli::menu::connect_scan(
 				&mut generator,
 				&mut output_type,
 				Duration::from_secs_f32(opt.timeout)
 			).await,
 			
-			ScanMethod::Socks5 => cli::menu::socks_scan(
+			ScanMethod::VScan => cli::menu::socks_scan(
 				&mut generator,
 				&mut output_type,
 				Duration::from_secs_f32(opt.timeout)
-			).await
+			).await,
+
+			ScanMethod::Syn => unimplemented!()
+
 		};
 
 		if let OutputType::Map(map) = output_type {

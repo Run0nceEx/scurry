@@ -42,15 +42,15 @@ pub fn address_parser(src: &str) -> Result<AddressInput, Error> {
 }
 
 
-
-
 impl std::str::FromStr for ScanMethod {
     type Err = Error;
 
     fn from_str(src: &str) -> Result<ScanMethod, Self::Err> {
         let opt = match src {
-            "open" => ScanMethod::Open,
-            "socks5" => ScanMethod::Socks5,
+            "open" => ScanMethod::Complete { wait_flag: true },
+            "connect" => ScanMethod::Complete { wait_flag: false },
+            "vscan" | "version-scan" => ScanMethod::VScan,
+            "syn" => ScanMethod::Syn,
             _ => return Err(Error::CliError("unrecognized scan method".to_string()))
         };
 
@@ -60,8 +60,21 @@ impl std::str::FromStr for ScanMethod {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ScanMethod {
-    Open,
-    Socks5,
+    /// complete a connection to the target,
+    /// and if the wait flag (`wait_flag`) is set to true, 
+    /// it will wait until the peer closes the connection
+    /// 
+    /// if set to false, it will close the connection 
+    /// immediately after the connection completes
+    /// in either case it doesn't send send any data 
+    /// outside of setting up the connection
+    Complete {
+        wait_flag: bool
+    },
+    Syn,
+
+    /// will attempt to do a version scan
+    VScan,
 }
 
 #[derive(Debug, Eq, PartialEq, Hash, Copy, Clone, Serialize)]
