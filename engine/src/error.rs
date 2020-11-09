@@ -1,6 +1,4 @@
 use tokio::time::Error as TimeError;
-use std::io::ErrorKind as IoKind;
-use serde::ser::SerializeStructVariant;
 
 
 #[derive(Debug)]
@@ -9,7 +7,20 @@ pub enum Error {
     TimeCacheError(TimeError),
     IO(std::io::Error),
     RangeError,
+    ParseErr(ParseErr)
 }
+
+use super::netlib::vscan::service_probe::Error as ParseErr;
+impl From<ParseErr> for Error {
+    fn from(x: ParseErr) -> Self {
+        if let ParseErr::IO(err) = x {
+            return Error::IO(err)
+        }
+
+        Error::ParseErr(x)        
+    }
+}
+
 
 impl From<std::num::ParseIntError> for Error {
     fn from(x: std::num::ParseIntError) -> Self {

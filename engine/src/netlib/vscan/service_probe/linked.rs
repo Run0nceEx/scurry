@@ -1,9 +1,8 @@
 use crate::model::PortInput;
 use super::{
-    super::common::Protocol,
     regmatch::Match,
     regmatch::AlignedSet,
-    parser::ProbeExpr,
+    parser::{ProbeExpr, Protocol},
 };
 
 use std::{
@@ -58,7 +57,7 @@ pub struct ChainedProbes {
     name_map: HashMap<String, usize>
 }
 
-/// immutable collection of probe responses
+/// immutable collection of probe & trigger combinations
 // [x] rarity order + load order
 // [x] all enteries with fallbacks do exist, or go to Null 
 impl ChainedProbes {
@@ -78,7 +77,7 @@ impl ChainedProbes {
         last_state
     }
 
-    pub fn construct(mut buf: Vec<ProbeExpr>, intensity: u8) -> Self {
+    pub fn new(mut buf: Vec<ProbeExpr>, max_intensity: u8) -> Self {
         // sort by name
         buf.sort_by(|a, b| a.name.partial_cmp(&b.name).unwrap());
         
@@ -137,7 +136,7 @@ impl ChainedProbes {
         
         // cut off after intensity is met
         let mut linked_probes: Vec<_> = linked.drain(..)
-            .take_while(|probe| probe.rarity <= intensity)
+            .take_while(|probe| probe.rarity <= max_intensity)
             .collect();
         
         let mut name_map = HashMap::new();

@@ -23,7 +23,6 @@ impl Match {
     }
 }
 
-
 /// a representation of a group of match statements found in nmap-server-probes
 /// this grouping is aligned so that indexes in `self.patterns` also correlate to `self.map`
 /// where information about the response's data capture

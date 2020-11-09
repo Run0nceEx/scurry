@@ -5,7 +5,8 @@ use std::{
     str::FromStr
 };
 use crate::error::Error;
-use super::super::common::Protocol;
+
+use super::super::service_probe::Protocol;
 
 #[derive(Clone, Debug)]
 struct MapItem {

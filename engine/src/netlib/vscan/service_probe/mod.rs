@@ -1,5 +1,13 @@
 pub mod common;
-pub mod error;
 mod linked;
 mod parser;
 mod regmatch;
+
+pub use parser::{
+    Directive,
+    Protocol,
+    ProbeExpr,
+    Error
+};
+
+pub use linked::ChainedProbes;
