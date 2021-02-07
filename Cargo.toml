@@ -1,0 +1,6 @@
+[workspace]
+members = [
+  "px-core",
+  "px-nmap",
+  "px-standalone"
+]
