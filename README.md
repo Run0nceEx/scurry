@@ -25,11 +25,10 @@ Heres some that I plan on delivering on a later date.
 
 feature | integrated
 --- | ---
-Version Detection | N/A
+Nmap Version Detection | N/A
 Compatible witth Nmap scripts (luaJIT) | N/A
 Apache Zookeeper Adaptor | N/A
-OSI Layer 4 Scanner | N/A
-Library interface | N/A
+px-swarm-daemon | N/A
 
 #### Version detection
 When this feature is added, it should be able to determine services running behind ports, including versions and version ranges.
