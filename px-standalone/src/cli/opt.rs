@@ -1,7 +1,7 @@
 use structopt::StructOpt;
 use super::input::parser::*;
 
-use netcore::model::{PortInput, port_parser};
+use px_core::model::{PortInput, port_parser};
 use std::str::FromStr;
 
 #[derive(Debug, StructOpt)]

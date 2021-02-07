@@ -1,5 +1,6 @@
 [workspace]
 members = [
-  "port_scanner",
-  "netcore"
+  "px-core",
+  "px-nmap",
+  "px-standalone"
 ]

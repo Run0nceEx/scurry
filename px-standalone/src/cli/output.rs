@@ -4,7 +4,7 @@ use std::{
 	fmt::Debug
 };
 
-use netcore::{
+use px_core::{
 	model::{State as NetState, Service},
 	pool::JobCtrl,
 };

@@ -1,4 +1,4 @@
-use netcore::error::Error as LibError;
+use px_core::error::Error as LibError;
 
 #[derive(Debug)]
 enum OutputError {

@@ -1,6 +1,6 @@
 use cidr_utils::cidr::{IpCidrIpAddrIterator, IpCidr};
 use std::net::{IpAddr, SocketAddr};
-use netcore::model::PortInput;
+use px_core::model::PortInput;
 use super::parser::AddressInput;
 
 #[derive(Debug)]

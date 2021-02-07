@@ -6,7 +6,6 @@ use crate::cli::error::Error;
 use structopt::StructOpt;
 use tokio::runtime::Builder;
 
-use netcore::error::Error as uuer;
 
 use std::time::Duration;
 

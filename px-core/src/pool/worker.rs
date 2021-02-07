@@ -186,6 +186,9 @@ where
         let mut lock = self.tx.lock().unwrap();
         lock.refresh();
         let jobs = &self.rx.read().0;
+        
+        // TODO(adam)
+        // optimize this better
         if jobs.len() > 0 {
             // this is safe because operations
             // aren't reflected until `lock.refresh()`

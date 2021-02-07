@@ -1,25 +1,16 @@
 [package]
-name = "px-engine"
+name = "px-core"
 version = "0.0.1"
 authors = ["Skarlett"]
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [lib]
-name = "netcore"
+name = "px_core"
 
 #[features]
 #default = []
 #lua = "mlua"
-
-
-#[dev-dependencies]
-#criterion = "0.3"
-
-#[[bench]]
-#name = "stats"
-#path = "benches"
-#harness = false
 
 #[dependencies.mlua]
 #version = "0.4"
@@ -39,7 +30,6 @@ features = [
     "parking_lot",
     "net",
     "time",
-    "rt-multi-thread",
     "rt",
     "sync",
     "time",
@@ -85,3 +75,13 @@ tokio-native-tls = "0.3.0"
 # Dependency conflict patches
 syn = "^1.0.33"
 
+
+
+
+#[dev-dependencies]
+#criterion = "0.3"
+
+#[[bench]]
+#name = "stats"
+#path = "benches"
+#harness = false

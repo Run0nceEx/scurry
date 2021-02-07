@@ -8,7 +8,7 @@ use std::{
 };
 
 
-use netcore::{
+use px_core::{
 	netlib::host_discovery::{
 		application::tcp::TcpProbe,
 		//socks5::{Socks5Scanner, ScanResult}

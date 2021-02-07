@@ -9,18 +9,18 @@ pub enum Error {
     TimeCacheError(TimeError),
     IO(std::io::Error),
     RangeError,
-    ParseErr(ParseErr)
+//    ParseErr(ParseErr)
 }
 
-use super::netlib::parsers::nmap::Error as ParseErr;
-impl From<ParseErr> for Error {
-    fn from(x: ParseErr) -> Self {
-        if let ParseErr::IO(err) = x {
-            return Error::IO(err)
-        }
-        Error::ParseErr(x)        
-    }
-}
+// use super::netlib::parsers::nmap::Error as ParseErr;
+// impl From<ParseErr> for Error {
+//     fn from(x: ParseErr) -> Self {
+//         if let ParseErr::IO(err) = x {
+//             return Error::IO(err)
+//         }
+//         Error::ParseErr(x)        
+//     }
+// }
 
 
 impl From<std::num::ParseIntError> for Error {
