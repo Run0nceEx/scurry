@@ -1,6 +1,5 @@
 # scurry 0.0.1 [WIP]
-![clip.gif](https://raw.githubusercontent.com/Skarlett/scurry/media/clip.gif)
-
+[![asciicast](https://asciinema.org/a/6RsstnYyovWmVCjYLdgYADMG0.svg)](https://asciinema.org/a/6RsstnYyovWmVCjYLdgYADMG0)
 Scurry a port scanner built from the [tokio runtime](https://tokio.rs). Scurry's priority is to build a fast concurrent service discovery tool, while maintaining the accuracy of nmap. This attempts to bridge the gap between [nmap](https://nmap.org/) and [masscan](https://github.com/robertdavidgraham/masscan).
 
 ### Scurry is in active development
