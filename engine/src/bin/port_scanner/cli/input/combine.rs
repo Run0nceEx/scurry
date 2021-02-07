@@ -1,6 +1,6 @@
 use cidr_utils::cidr::{IpCidrIpAddrIterator, IpCidr};
 use std::net::{IpAddr, SocketAddr};
-use crate::model::PortInput;
+use netcore::model::PortInput;
 use super::parser::AddressInput;
 
 #[derive(Debug)]
@@ -9,31 +9,43 @@ enum FeedItem<'a> {
 	Cidr(CidrPortCombinator<'a>)
 }
 
+enum ExclusionItem {
+	Range(IpCidr),
+	Addr(IpAddr)
+}
+
 pub struct Feeder<'a> {
+	exclusions: Vec<ExclusionItem>,
 	items: Vec<FeedItem<'a>>,
 	working_on: Option<FeedItem<'a>>,
 }
 
 impl<'a> Feeder<'a> {
-	pub fn new(ports: &'a [PortInput], address_input: &[AddressInput] ) -> Self {
+	pub fn new(ports: &'a [PortInput], address_input: &[AddressInput], exclusions: &'a [AddressInput]) -> Self {
 		let mut items = Vec::new();
 
 		for addr in address_input {
-			match addr {
-				AddressInput::CIDR(cidr) => items.push(
-					FeedItem::Cidr(CidrPortCombinator::new(&cidr, ports))
-				),
-
-				AddressInput::Singleton(ip) => items.push(
-					FeedItem::IpAddr(IpAddrPortCombinator::new(*ip, ports))
-				),
-				
+			items.push(match addr {
+				AddressInput::CIDR(cidr) =>
+					FeedItem::Cidr(CidrPortCombinator::new(&cidr, ports)),
+				AddressInput::Singleton(ip) =>
+					FeedItem::IpAddr(IpAddrPortCombinator::new(*ip, ports)),
 				_ => unimplemented!()
-			}
+			});
+		}
+		
+		let mut exclude = Vec::new();
+		for addr in exclusions {
+			exclude.push(match addr { 
+				AddressInput::CIDR(cidr) => ExclusionItem::Range(cidr.clone()),
+				AddressInput::Singleton(ip) => ExclusionItem::Addr(ip.clone()),
+				_ => unimplemented!()
+			});
 		}
 
 		Self {
 			items,
+			exclusions: exclude,
 			working_on: None
 		}
 	}
@@ -57,10 +69,16 @@ impl<'a> Feeder<'a> {
 				
 				match item {
 					Some(item) => {
-						buffer.push(item);
+						let push_buf = !self.exclusions.iter().any(|x|
+							match x {
+								ExclusionItem::Range(rng) => rng.contains(item.ip()),
+								ExclusionItem::Addr(ip) => *ip == item.ip()
+							}
+						);
+
+						if push_buf { buffer.push(item) }
 						continue
 					}
-
 					None => self.working_on = None
 				}
 			}
@@ -72,7 +90,6 @@ impl<'a> Feeder<'a> {
 					None => return buffer.len()-original 
 				}
 			}
-		
 		}
 
 		return buffer.len()-original;
@@ -265,7 +282,7 @@ mod test {
 			AddressInput::CIDR(IpCidr::from_str("10.0.0.1/24").unwrap())
 		];
 		
-		let mut feed = Feeder::new(ports, x);
+		let mut feed = Feeder::new(ports, x, &[]);
 		
 		let mut buf = Vec::new();
 		feed.generate_chunk(&mut buf, 8);

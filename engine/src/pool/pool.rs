@@ -3,10 +3,10 @@ use super::{
     worker::{Worker, JobCtrl, JobErr},
 };
 
-use tokio::stream::StreamExt;
+use tokio_stream::{self as stream, StreamExt};
 use std::fmt::Debug;
 use super::CRON;
-use crate::cli::input::combine::Feeder;
+//use crate::cli::input::combine::Feeder;
 
 
 pub struct Pool<J, R, S>
@@ -36,8 +36,13 @@ where
     }
 
     #[inline]
+    pub fn calc_new_spawns(&self, buf_len: usize) -> usize {
+        self.pool.calc_new_spawns(buf_len)
+    }
+
+    #[inline]
     pub fn is_working(&self) -> bool {
-        self.pool.job_count()-1 > 0 && self.stash.amount() > 0  
+        self.pool.job_count() > 1 && self.stash.amount() > 0  
     }
 
     #[inline]
@@ -55,36 +60,9 @@ where
         self.pool.flush()
     }
 
-    pub async fn fire_from_feeder<'a>(&mut self, queued: &mut Vec<S>, feed: &mut Feeder<'a>) -> usize
-    where S: From<std::net::SocketAddr>
-    {
-
-        let mut sock_buf = Vec::with_capacity(4001);
-        feed.generate_chunk(&mut sock_buf, 4000);
-        queued.extend(sock_buf.drain(..).map(|x| x.into()));
-
-        let alloc_amt = self.pool.calc_new_spawns(queued.len());
-        
-        if alloc_amt > 0 {
-            let release_amt = self.stash.release(queued).await;       
-            let feed_amt;
-
-            if release_amt >= alloc_amt {
-                feed_amt = 0
-            }
-
-            else {
-                feed_amt = alloc_amt - release_amt
-            }
-            
-            if feed_amt > 0 && !feed.is_done() {
-                feed.generate_chunk(&mut sock_buf, feed_amt);
-                queued.extend(sock_buf.drain(..).map(|x| x.into()));
-            }
-            
-            return self.pool.spawn(queued)
-        }
-        0
+    #[inline]
+    pub fn spawn(&mut self, buf: &mut Vec<S>) -> usize {
+        self.pool.spawn(buf)
     }
 
     pub async fn tick(&mut self, queued: &mut Vec<S>) -> Vec<(JobCtrl<R>, S)> {

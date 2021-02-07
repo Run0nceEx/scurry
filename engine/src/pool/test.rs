@@ -20,7 +20,7 @@ use crate::{
     util::Boundary
 };
 
-use tokio::stream::StreamExt;
+use tokio_stream::StreamExt;
 use std::time::Duration;
 
 pub const JOB_CNT: usize = 100;
@@ -99,7 +99,7 @@ fn worker_single_in_single_out() {
         let mut pool = noop::NopWorker::default_test();
         pool.spawn(&mut buf);
         
-        tokio::time::delay_for(std::time::Duration::from_secs(5)).await;
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
         let rbuf = pool.next().await.unwrap();
         assert_eq!(rbuf.len(), 1);
     });
@@ -119,7 +119,7 @@ fn worker_job_count_accurate() {
         pool.spawn(&mut buf);
         assert_eq!(pool.job_count(), 2);
         
-        tokio::time::delay_for(std::time::Duration::from_secs(2)).await;
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
         
         assert_eq!(pool.next().await.unwrap().len(), 1);
         assert_eq!(pool.job_count(), 1);
@@ -139,7 +139,7 @@ fn worker_all_in_all_out() {
         assert_eq!(buf.len(), JOB_CNT);
         pool.spawn(&mut buf);
         
-        tokio::time::delay_for(std::time::Duration::from_secs(5)).await;
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
         
         assert_eq!(JOB_CNT, pool.next().await.unwrap().len());
     });
@@ -161,7 +161,7 @@ fn worker_all_timeout() {
         type Response = mock::Response;
 
         async fn exec(_state: &mut Self::State) -> Result<JobCtrl<Self::Response>, Error> {
-            tokio::time::delay_for(Duration::from_secs(DELAY_SECS)).await;
+            tokio::time::sleep(Duration::from_secs(DELAY_SECS)).await;
             Ok(JobCtrl::Return(NetState::Closed, mock::Response))
         }
     }
@@ -187,7 +187,7 @@ fn worker_all_timeout() {
         assert_eq!(pool.job_count(), JOB_CNT+1);
         assert_eq!(buf.len(), 0);
         
-        tokio::time::delay_for(std::time::Duration::from_secs(5)).await;
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
         
         while let Some(data) = pool.next().await {
             for (sig, _state) in data {
@@ -219,7 +219,7 @@ fn pool_all_in_all_out() {
             let res = pool.tick(&mut buf).await;
             
             if i == 0 {
-                tokio::time::delay_for(std::time::Duration::from_secs(2)).await;
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
             }
             else if i == 1 {
                 return res

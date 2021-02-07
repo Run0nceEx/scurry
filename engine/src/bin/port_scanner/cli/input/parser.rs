@@ -4,7 +4,7 @@ use std::{
 };
 
 use serde::Serialize;
-use crate::model::PortInput;
+use netcore::model::PortInput;
 use cidr_utils::cidr::IpCidr;
 use crate::cli::error::Error;
 
@@ -42,46 +42,15 @@ pub fn address_parser(src: &str) -> Result<AddressInput, Error> {
 }
 
 
-
-impl std::str::FromStr for PortInput {
-    type Err = Error;
-
-    /// Accepts '80-443', '80', '0-10'
-    fn from_str(src: &str) -> Result<Self, Self::Err> {
-        port_parser(src)
-    }
-}
-
-
-pub fn port_parser(src: &str) -> Result<PortInput, Error> {
-    let data: Vec<&str> = src.split("-").collect();
-    let mut bottom = data.get(0).unwrap().parse::<u16>()?;
-
-    if data.len() > 2 {
-        return Err(Error::CliError("port ranges (-p 20-25) can only be in groups of 2 (not 20-25-30)".to_string()))
-    }
-    
-    if data.len() == 2 {
-        let mut top = data.get(1).unwrap().parse::<u16>()?;
-        if bottom >= top {
-            std::mem::swap(&mut bottom, &mut top);
-        }
-        return Ok(PortInput::Range(bottom..top))
-    }
-
-    Ok(PortInput::Singleton(bottom))
-}
-
-
-
-
 impl std::str::FromStr for ScanMethod {
     type Err = Error;
 
     fn from_str(src: &str) -> Result<ScanMethod, Self::Err> {
         let opt = match src {
-            "open" => ScanMethod::Open,
-            "socks5" => ScanMethod::Socks5,
+            "open" => ScanMethod::Complete { wait_flag: true },
+            "connect" => ScanMethod::Complete { wait_flag: false },
+            "vscan" | "version-scan" => ScanMethod::VScan,
+            "syn" => ScanMethod::Syn,
             _ => return Err(Error::CliError("unrecognized scan method".to_string()))
         };
 
@@ -91,8 +60,21 @@ impl std::str::FromStr for ScanMethod {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ScanMethod {
-    Open,
-    Socks5,
+    /// complete a connection to the target,
+    /// and if the wait flag (`wait_flag`) is set to true, 
+    /// it will wait until the peer closes the connection
+    /// 
+    /// if set to false, it will close the connection 
+    /// immediately after the connection completes
+    /// in either case it doesn't send send any data 
+    /// outside of setting up the connection
+    Complete {
+        wait_flag: bool
+    },
+    Syn,
+
+    /// will attempt to do a version scan
+    VScan,
 }
 
 #[derive(Debug, Eq, PartialEq, Hash, Copy, Clone, Serialize)]

@@ -1,4 +1,4 @@
-use crate::error::Error as LibError;
+use netcore::error::Error as LibError;
 
 #[derive(Debug)]
 enum OutputError {

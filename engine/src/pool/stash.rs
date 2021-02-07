@@ -3,10 +3,9 @@ use std::{
     time::Duration,
 };
 
-use tokio::{
-    time::DelayQueue,
-    stream::StreamExt
-};
+use tokio_util::time::DelayQueue;
+
+use tokio_stream::StreamExt;
 
 pub struct Stash<T> {
     stash: HashMap<usize, T>,

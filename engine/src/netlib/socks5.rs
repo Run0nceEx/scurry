@@ -1,5 +1,5 @@
-use crate::libcore::{
-    task::{SignalControl, CRON},
+use crate::{
+    pool::{JobCtrl, CRON, JobErr},
     error::Error,
     model::State
 };
@@ -34,16 +34,17 @@ impl CRON for Socks5Scanner {
     type State = SocketAddr;
     type Response = ScanResult;
 
-    async fn exec(addr: &mut SocketAddr) -> Result<SignalControl<Self::Response>, Error>
+    async fn exec(addr: &mut SocketAddr) -> Result<JobCtrl<Self::Response>, Error>
     {
         match scan(*addr).await {
-            Ok(method) => return Ok(SignalControl::Success(State::Open, method)),
+            Ok(method) => return Ok(JobCtrl::Return(State::Open, method)),
 
-            Err(Error::IO(x)) => return Ok(super::handle_io_error(x, ScanResult::Other(*addr))),
+            Err(Error::IO(x)) => return Ok(JobCtrl::Error(super::handle_io_error(x))),
 
             Err(e) => {
-                tracing::event!(target: "Schedule Thread", tracing::Level::WARN, "unmatched {:#?} [not io error]", e);
-                return Ok(SignalControl::Retry)
+                eprintln!("unmatched error {:#?} [not io error]", e);
+                Ok(JobCtrl::Error(JobErr::Other))
+                
             }
         }
     }
