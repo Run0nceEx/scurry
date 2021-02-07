@@ -27,7 +27,6 @@ pub async fn connect_scan<'a>(generator: &mut combine::Feeder<'a>, results: &mut
 	
 	loop {
 		if !generator.is_done() {
-			eprintln!("TODO");
 			fire_from_feeder(&mut pool, &mut buffer, generator).await;
 		}
 		
@@ -39,7 +38,7 @@ pub async fn connect_scan<'a>(generator: &mut combine::Feeder<'a>, results: &mut
 			break
 		}
 		
-		tokio::time::delay_for(Duration::from_nanos(TICK_NS)).await;
+		tokio::time::sleep(Duration::from_nanos(TICK_NS)).await;
 	}
 
 	results.handle(&pool.flush_channel());

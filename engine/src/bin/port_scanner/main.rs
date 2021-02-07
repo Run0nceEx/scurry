@@ -1,4 +1,5 @@
 #![feature(test)]
+
 mod cli;
 
 use crate::cli::error::Error;
@@ -21,8 +22,8 @@ fn main() -> Result<(), Error> {
 	//cli::opt::Arguments::clap().gen_completions(env!("CARGO_PKG_NAME"), Shell::Bash, "target");
 	let opt = cli::opt::Arguments::from_args();
 
-	let mut runtime = Builder::default()
-		.core_threads(opt.threads.unwrap_or(num_cpus::get()))
+	let mut runtime = Builder::new_multi_thread()
+		.worker_threads(opt.threads.unwrap_or(num_cpus::get()))
 		.enable_all()
 		.build()?;
 
