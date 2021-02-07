@@ -1,4 +1,4 @@
-use crate::model::PortInput;
+use px_core::model::PortInput;
 use super::{
     regmatch::MatchExpr,
     regmatch::AlignedSet,

@@ -2,7 +2,7 @@ use super::model::{Directive, MatchLineExpr};
 
 use regex::bytes::RegexSet;
 
-use crate::error::Error;
+use crate::error::ErrorKind;
 
 // match http-proxy-ctrl m|^WWWOFFLE Server Status\n-*\nVersion *: (\d.*)\n| p/WWWOFFLE proxy control/ v/$1/ cpe:
 
@@ -14,12 +14,12 @@ enum Ident {
 }
 
 impl Ident {
-    fn from_char(c: char) -> Result<Ident, Error> {
+    fn from_char(c: char) -> Result<Ident, ErrorKind> {
         Ok(match c {
             'a' => Ident::Application,
             'h' => Ident::Hardware,
             'o' => Ident::OperationSystem,
-            c => return Err(Error::ParseError(format!("Expected char 'a', 'h', or 'o', got '{}'", c)))
+            c => return Err(ErrorKind::UnknownToken(format!("Expected char 'a', 'h', or 'o', got '{}'", c)))
         })
     }
 }

@@ -109,7 +109,7 @@ fn should_stash<T>(ctrl: &JobCtrl<T>) -> bool {
 fn is_resource_blocked(errno: i32) -> bool {
     match errno {
         101         // Network unreachable
-        // | 113       // no route to host
+        | 113       // no route to host
         | 92        // failed to bind to interface/protocol
         | 24        // too many file-discriptors open
         => true,

@@ -1,7 +1,8 @@
-use crate::{
+use px_core::{
     model::PortInput,
-    netlib::parsers::nmap::Error
+    // netlib::parsers::nmap::Error
 };
+use crate::error::{Error, ErrorKind};
 
 use std::str::FromStr;
 
@@ -18,13 +19,13 @@ impl Default for Protocol {
 }
 
 impl FromStr for Protocol {
-    type Err = Error;
+    type Err = ErrorKind;
 
     fn from_str(x: &str) -> Result<Self, Self::Err> {
         Ok(match x.trim() {
             "udp" | "UDP" => Protocol::UDP,
             "tcp" | "TCP" => Protocol::TCP,
-            _ => return Err(Error::UnknownToken("Got \"{}\" instead of tcp or udp".to_string())) 
+            _ => return Err(ErrorKind::UnknownToken("Got \"{}\" instead of tcp or udp".to_string())) 
         })
     }
 }
@@ -38,13 +39,13 @@ pub enum Directive {
 
 
 impl FromStr for Directive {
-    type Err = Error;
+    type Err = ErrorKind;
 
     fn from_str(x: &str) -> Result<Self, Self::Err> {
         Ok(match x.trim() {
             "softmatch" => Directive::SoftMatch,
             "match" => Directive::Match,
-            _ => return Err(Error::UnknownToken("Got \"{}\" instead of match or softmatch".to_string())) 
+            _ => return Err(ErrorKind::UnknownToken("Got \"{}\" instead of match or softmatch".to_string())) 
         })
     }
 }

@@ -1,5 +1,5 @@
 use serde::Serialize;
-use super::error::Error;
+use super::error::{Error};
 
 #[allow(dead_code)]
 #[derive(Debug, Eq, PartialEq, Hash, Copy, Clone, Serialize)]

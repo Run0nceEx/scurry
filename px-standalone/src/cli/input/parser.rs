@@ -13,9 +13,7 @@ pub enum AddressInput {
     Pair(SocketAddr),
     Singleton(IpAddr),
     CIDR(IpCidr),
-    File(PathBuf),
-
-    // TheWorld - special 
+    File(PathBuf), 
 }
 
 
