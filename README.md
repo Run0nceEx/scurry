@@ -38,16 +38,14 @@ After we implement probing and discovering capabilities, we sometimes want more 
 #### Apache Zookeeper adaptor
 Adding zookeeper should let us take and push results into zookeeper, which in turn allows us to provide cluster computations.
 
-#### Library Interface
-Adding a library interface for programmically running the engine is a very far goal, but would allow people to programmically use this tool in their own services.
-
 ##  Compiling
 https://rustup.rs/ (Install compiler)
 ```
 git clone https://github.com/Skarlett/scurry
 cd scurry
-cargo build --release
-mv target/release/px-engine $PWD
+cargo build --release --bin port_scanner
+mv target/release/port_scanner $PWD
+./port_scanner --help
 ```
 
 ## Usage 
