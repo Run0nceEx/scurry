@@ -37,6 +37,12 @@ pub struct ServiceTest<T: Serialize> {
 }
 
 
+struct Port {
+    inner: PortInput,
+    ssl: bool
+}
+
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum PortInput {
     Singleton(u16),

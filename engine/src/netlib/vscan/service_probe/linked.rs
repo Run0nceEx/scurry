@@ -1,8 +1,8 @@
 use crate::model::PortInput;
 use super::{
-    regmatch::Match,
+    regmatch::MatchExpr,
     regmatch::AlignedSet,
-    parser::{ProbeExpr, Protocol},
+    model::{ProbeExpr, Protocol},
 };
 
 use std::{
@@ -31,14 +31,14 @@ struct Link {
 }
 
 impl Link {
-    fn matches<'a>(&'a self, input_buf: &[u8], out_buf: &mut Vec<&'a Match>) {
+    fn matches<'a>(&'a self, input_buf: &[u8], out_buf: &mut Vec<&'a MatchExpr>) {
         self.lookup_set.match_response(input_buf, out_buf)
     }
 }
 
 impl From<ProbeExpr> for Link {
-    fn from(x: ProbeExpr) -> Self { 
-        Self {
+    fn from(x: ProbeExpr) -> Self {
+        let mut this = Self {
             proto: x.proto,
             // interpret bytes TODO
             payload: construct_payload(&x.payload),
@@ -48,7 +48,16 @@ impl From<ProbeExpr> for Link {
             tls_ports: x.tls_ports,
             fallback: x.fallback.unwrap(),
             lookup_set: AlignedSet::new(&x.patterns).unwrap()
-        }
+        };
+
+        this.tls_ports.shrink_to_fit();
+        this.ports.shrink_to_fit();
+        this.exclude.shrink_to_fit();
+        this.name.shrink_to_fit();
+        this.payload.shrink_to_fit();
+        this.fallback.shrink_to_fit();
+
+        this
     }
 }
 
@@ -58,6 +67,7 @@ pub struct ChainedProbes {
 }
 
 /// immutable collection of probe & trigger combinations
+/// once created, its contents shouldn't be modified
 // [x] rarity order + load order
 // [x] all enteries with fallbacks do exist, or go to Null 
 impl ChainedProbes {
@@ -149,8 +159,9 @@ impl ChainedProbes {
             name_map.insert(probe.name.clone(), i).unwrap();
         }
 
-        // as far as we're concerned, this is now a flat list of probes that are specifically loaded in order
-
+        // as far as we're concerned, 
+        // this is now a flat list of probes that are ordered
+        // first from rarity, then load order
         Self {
             inner: linked_probes.drain(..)
                 .map(|expr| expr.into())

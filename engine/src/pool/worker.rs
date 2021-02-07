@@ -10,9 +10,8 @@ use std::{
 
 use tokio::{
     time::timeout,
-    stream::Stream
 };
-
+use tokio_stream::{Stream, StreamExt};
 use crate::model::State as NetState;
 use crate::util::Boundary;
 
@@ -132,6 +131,7 @@ where
     }
 
     #[inline]
+    /// This will always return atleast 1 or more
     pub fn job_count(&self) -> usize {
         std::sync::Arc::strong_count(&self.tx)
     }
@@ -164,8 +164,8 @@ where
 
     /// wait until all work is done before attempting to flush `rx` and `tx`
     pub async fn flush_all(&mut self) -> Vec<(JobCtrl<R>, S)> {
-        while self.job_count() > 1 {
-            tokio::time::delay_for(std::time::Duration::from_secs(2)).await;
+        while self.job_count() > 1 { 
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
         }
 
         self.flush()
