@@ -4,4 +4,6 @@ pub mod error;
 pub mod model;
 pub mod pool;
 pub mod util;
-pub mod netlib;
+
+#[cfg(feature = "include-test")]
+pub use pool::test as tests;

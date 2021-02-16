@@ -16,14 +16,29 @@ impl std::fmt::Display for Boundary {
     }
 }
 
+
+#[cfg(target_os = "linux")]
 pub fn get_max_fd() -> Result<Boundary, Box<dyn std::error::Error>> {
+    // to raise limits
+    // sysctl -w fs.file-max=100000
+    // OR
+    // vi /etc/sysctl.conf
+    // fs.file-max = 100000
+    // /proc/sys/fs/file-max - system max
+    // /proc/sys/fs/file-nr  - in use
+    // ulimit can alleive tension
+
     const INDICATOR: &'static str = "Max open files";
 
     let mut fd = BufReader::new(File::open("/proc/self/limits")?);
     let mut buf = String::new();
     
     while let Ok(n) = fd.read_line(&mut buf) {
-        if buf.trim().starts_with(INDICATOR) {
+        if n == 0 {
+            break
+        }
+        
+        else if buf.trim().starts_with(INDICATOR) {
             if let Some(size) = buf.split("            ").nth(1) {
                 if size.starts_with("unlimited") {
                     return Ok(Boundary::Unlimited)
@@ -34,10 +49,6 @@ pub fn get_max_fd() -> Result<Boundary, Box<dyn std::error::Error>> {
             }
         }
 
-        if n == 0 {
-            break
-        }
-
         buf.clear();
     }
 
@@ -45,4 +56,9 @@ pub fn get_max_fd() -> Result<Boundary, Box<dyn std::error::Error>> {
         std::io::ErrorKind::UnexpectedEof,
         format!("Could not find `{}` in /proc/self/limits", INDICATOR)
     )))
+}
+
+#[cfg(target = "windows")]
+pub fn get_max_fd() -> Result<Boundary, Box<dyn std::error::Error>> {
+    todo!()
 }

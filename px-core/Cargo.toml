@@ -1,6 +1,6 @@
 [package]
 name = "px-core"
-version = "0.0.1"
+version = "0.1.0"
 authors = ["Skarlett"]
 edition = "2018"
 
@@ -60,8 +60,6 @@ features = ["perf"]
 [dependencies]
 # In-use dependencies
 tracing = "0.1.23"
-tracing-subscriber = "0.2.15"
-# pnet = "0.27.2"
 async-trait = "0.1"
 evc = "0.1.2"
 rand = "0.8.3"
@@ -75,13 +73,15 @@ tokio-native-tls = "0.3.0"
 # Dependency conflict patches
 syn = "^1.0.33"
 
+[dev-dependencies.criterion]
+version = "0.3"
+features = ["html_reports"]
 
+[[bench]]
+name = "stats"
+path = "benches/pool.rs"
+harness = false
 
-
-#[dev-dependencies]
-#criterion = "0.3"
-
-#[[bench]]
-#name = "stats"
-#path = "benches"
-#harness = false
+[features]
+default = []
+include-tests = []

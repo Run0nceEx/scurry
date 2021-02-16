@@ -102,7 +102,7 @@ impl ChainedProbes {
         // to ensure they actually go to something
 
         // copy all the names into this buffer
-        let name_buf: HashSet<String> = dedup
+        let name_buf: Vec<String> = dedup
             .iter()
             .map(|probe| probe.name.clone())
             .collect();
@@ -112,7 +112,7 @@ impl ChainedProbes {
             if let Some(fallback) = &mut probe.fallback {
 
                 // map to no fallback if it doesn't exist
-                if !name_buf.contains(fallback.as_str()) {
+                if !name_buf.contains(&fallback.to_string()) {
                     probe.fallback = None;
                 }
             }
@@ -175,9 +175,6 @@ impl ChainedProbes {
     }
 
 }
-
-
-
 
 fn construct_payload(x: &str) -> Vec<u8> {
     unimplemented!()

@@ -1,8 +1,10 @@
+//pub mod vscan;
+//pub mod parsers;
 pub mod tcp;
-pub mod udp;
+pub mod socks5;
 
 
-use crate::pool::JobErr;
+use px_core::pool::JobErr;
 fn handle_io_error(err: std::io::Error) -> JobErr {
     match err.kind() {
         std::io::ErrorKind::Other => match err.raw_os_error() {

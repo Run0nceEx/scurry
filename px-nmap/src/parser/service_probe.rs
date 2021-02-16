@@ -9,6 +9,8 @@ use crate::{
     }
 };
 
+
+
 use super::super::Error;
 
 use std::{
@@ -26,12 +28,11 @@ pub fn parse_txt_db<T: Read>(fd: &mut BufReader<T>, expressions: &mut Vec<ProbeE
     let mut entity = ProbeExpr::default();
     // parse line by line
     while fd.read_line(&mut line_buf)? > 0 {
-        // if probe delimiter reached, attempt to make a `ProbeEntry` out of `ProbeExpr`
         if line_buf.len() == 0 {
             continue
         }
 
-        
+        // if probe delimiter reached, attempt to make a `ProbeEntry` out of `ProbeExpr`
         if line_buf.contains(&DELIMITER) {
             if entity.name.len() > 0 && entity.payload.len() > 0 {
                 expressions.push(entity);
@@ -60,8 +61,8 @@ pub fn parse_txt_db<T: Read>(fd: &mut BufReader<T>, expressions: &mut Vec<ProbeE
         }
         
         // fuck me i hate parsing code ()
-        // this is how we're tokenizing i guess
-        // dont really feel like building a whole lexer+expr tree
+        // this is how we're tokenizing
+        // bc i dont really feel like building a whole lexer+expr tree
         let mut tokens = line_buf.split_whitespace();        
         
         let first_token = tokens.next().ok_or_else(||Error::ExpectedToken)?;
@@ -115,10 +116,10 @@ pub fn parse_txt_db<T: Read>(fd: &mut BufReader<T>, expressions: &mut Vec<ProbeE
         }
 
 
-        else if first_token.eq("totalwaitms") {
-
+        else if first_token.eq("totalwaitms") {}
+        else if first_token.eq("fallback") {
+            tokens.next().ok_or_else(|| Error::ExpectedToken)?;
         }
-        else if first_token.eq("fallback") {}
 
 
         line_buf.clear();
@@ -172,7 +173,7 @@ fn parse_match_expr(line_buf: &str, first_token: &str, tokens: &mut std::str::Sp
         let delimiter = cursor.next()
             .ok_or_else(|| Error::ExpectedToken)?;
         
-        // now we split on '|'
+        // now we split on '|' (delimiter)
         let mut regex_cursor = line_buf.split(delimiter);
         
         // everything before '|'
@@ -243,10 +244,11 @@ fn parse_match_expr(line_buf: &str, first_token: &str, tokens: &mut std::str::Sp
         )
     }
     unimplemented!()
-    // MatchLineExpr {
-    //     name,
-    //     match_type: Directive::from_str(first_token)?,           
-    // }
+    MatchLineExpr {
+        name,
+        match_type: Directive::from_str(first_token)?,           
+    }
+
     // entity.patterns.push();
 }
 // match teamtalk m%^(?:teamtalk|welcome) userid=\d+ servername="" .* protocol="([\d.]+)"\r\nerror number=2002 message="Invalid user account"\r\n% p/BearWare TeamTalk/ i/protocol: $1/ cpe:/a:bearware:teamtalk/

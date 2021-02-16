@@ -36,13 +36,6 @@ pub struct ServiceTest<T: Serialize> {
     pub data: T
 }
 
-
-struct Port {
-    inner: PortInput,
-    ssl: bool
-}
-
-
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum PortInput {
     Singleton(u16),
@@ -52,7 +45,7 @@ pub enum PortInput {
 impl PortInput {
     pub fn contains(&self, other: u16) -> bool {
         match self {
-            PortInput::Singleton(s) => *s == other,
+            PortInput::Singleton(s) => s.eq(&other),
             PortInput::Range(rng) => rng.contains(&other)
         }
     }
@@ -78,6 +71,7 @@ pub fn port_parser(src: &str) -> Result<PortInput, Error> {
     if data.len() == 2 {
         let mut top = data.get(1).unwrap().parse::<u16>()?;
         if bottom >= top {
+            // swaps addresses
             std::mem::swap(&mut bottom, &mut top);
         }
         return Ok(PortInput::Range(bottom..top))

@@ -65,6 +65,7 @@ impl PortMap {
                     freq: freq.parse()?
                 })
             };
+            
             if map.contains_key(&port) {
                 let buf = map.get_mut(&port).unwrap();
                 buf.push(item);

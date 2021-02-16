@@ -8,12 +8,19 @@ use px_core::model::PortInput;
 use cidr_utils::cidr::IpCidr;
 use crate::cli::error::Error;
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
+enum WorldType {
+    V4,
+    V6
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum AddressInput {
     Pair(SocketAddr),
     Singleton(IpAddr),
     CIDR(IpCidr),
-    File(PathBuf), 
+    File(PathBuf),
+    World(WorldType)
 }
 
 
@@ -22,7 +29,15 @@ pub fn address_parser(src: &str) -> Result<AddressInput, Error> {
         // File
         return Ok(AddressInput::File(PathBuf::from(src)))
     }
-    
+    // scanning the entire world huh
+    else if src.eq("0.0.0.0/0") {
+        return Ok(AddressInput::World(WorldType::V4))
+    }
+
+    else if src.eq("::/0") {
+        Ok(AddressInput::World(WorldType::V6))
+    }
+    // --
     else if src.contains("/") {
         //cidr
         return Ok(AddressInput::CIDR(IpCidr::from_str(src)?))
@@ -47,8 +62,10 @@ impl std::str::FromStr for ScanMethod {
         let opt = match src {
             "open" => ScanMethod::Complete { wait_flag: true },
             "connect" => ScanMethod::Complete { wait_flag: false },
-            "vscan" | "version-scan" => ScanMethod::VScan,
-            "syn" => ScanMethod::Syn,
+            "socks" => ScanMethod::Socks,
+
+            "vscan" | "version-scan" => unimplemented!(),
+            "syn" => unimplemented!(),
             _ => return Err(Error::CliError("unrecognized scan method".to_string()))
         };
 
@@ -73,6 +90,8 @@ pub enum ScanMethod {
 
     /// will attempt to do a version scan
     VScan,
+
+    Socks,
 }
 
 #[derive(Debug, Eq, PartialEq, Hash, Copy, Clone, Serialize)]
