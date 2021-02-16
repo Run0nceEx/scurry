@@ -3,7 +3,7 @@ use std::path::PathBuf;
 #[derive(Debug)]
 pub enum ErrorKind {
     ParseError(String),
-    UnknownToken(String),
+    ExpectedToken(FileLocation),
     IO(tokio::io::Error)
 }
 

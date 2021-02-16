@@ -5,16 +5,17 @@ use std::{
 };
 
 use px_core::{
-	model::{State as NetState, Service},
+	model::{State as NetState},
 	pool::JobCtrl,
 };
 
 use crate::cli::input::parser;
+use serde::Serialize;
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub enum OutputType {
 	Stream,
-	Map(HashMap<IpAddr, Vec<Service>>)
+	Map(HashMap<IpAddr, Vec<(u16, NetState)>>)
 }
 
 
@@ -66,9 +67,9 @@ impl OutputType {
 					
 					let service = match sig {
 						JobCtrl::Return(netstate, _resp) => 
-							Service {port: sock.port(), state: *netstate},
+							(sock.port(), *netstate),
 						JobCtrl::Error(_err) =>
-							Service { port: sock.port(), state: NetState::Closed }				
+							(sock.port(),  NetState::Closed),
 					};
 
 					match map.get_mut(&sock.ip()) {

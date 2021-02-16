@@ -11,6 +11,6 @@ use super::handle_io_error;
 struct LuaRT {}
 
 pub fn init() -> LuaRT {
-
+  unimplemented!()
 }
 

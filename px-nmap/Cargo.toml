@@ -13,4 +13,6 @@ name = "px_nmap"
 px-core = { path = "../px-core" }
 regex = "1.4.3"
 
+smallvec = "*"
+logos = "*"
 tokio = { version = "1.2.0", features = ["io-util"] }

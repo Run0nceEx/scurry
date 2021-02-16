@@ -1,7 +1,6 @@
-use serde::Serialize;
 use super::error::{Error};
+use serde::Serialize;
 
-#[allow(dead_code)]
 #[derive(Debug, Eq, PartialEq, Hash, Copy, Clone, Serialize)]
 pub enum State {
     Closed,
@@ -20,20 +19,6 @@ impl std::fmt::Display for State {
         write!(f, "{}", x)?;
         Ok(())
     }
-}
-
-
-#[derive(Debug, Eq, PartialEq, Hash, Clone, Copy, Serialize)]
-pub struct Service {
-    pub port: u16,
-    pub state: State,
-}
-
-#[derive(Debug, Eq, PartialEq, Hash, Clone, Copy, Serialize)]
-pub struct ServiceTest<T: Serialize> {
-    pub port: u16,
-    pub state: State,
-    pub data: T
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

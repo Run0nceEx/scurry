@@ -24,7 +24,6 @@ impl CRON for TcpProbe
             Ok(_) => Ok(JobCtrl::Return(State::Open, *state)),
 
             Err(Error::IO(err)) => Ok(JobCtrl::Error(handle_io_error(err))),
-            
             Err(e) => {
                 eprintln!("unmatched error {:#?} [not io error]", e);
                 Ok(JobCtrl::Error(JobErr::Other))

@@ -9,7 +9,7 @@ use tokio_stream::StreamExt;
 
 pub struct Stash<T> {
     stash: HashMap<usize, T>,
-    timer: DelayQueue<usize>
+    timer: DelayQueue<usize>,
 }
 
 impl<T> Stash<T> {
@@ -25,13 +25,18 @@ impl<T> Stash<T> {
     pub fn insert(&mut self, state: T, delay_for: &Duration) {
         // ignoring key bc we dont transverse `self.stash` to remove items from
         // `self.timer`
+
+        // todo(adam)
+        // possible resource sink here
         let mut key: usize = rand::random();
         while let Some(_) = self.stash.get(&key) {
             key = rand::random();
         }
-        
+        // --
+
         let _key = self.timer.insert(key, *delay_for);
         self.stash.insert(key, state);
+
     }
 
     /// flushes all the states of tasks left inside of `Stash`
