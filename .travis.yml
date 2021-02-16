@@ -1,4 +1,4 @@
 language: rust
 rust:
   - nightly
-  fast_finish: true
+fast_finish: true
