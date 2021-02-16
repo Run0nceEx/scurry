@@ -1,5 +1,6 @@
 #[cfg(test)]
-mod test;
+#[cfg(feature="include-tests")]
+pub mod test;
 
 pub mod worker;
 pub use worker::*;

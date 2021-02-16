@@ -1,4 +1,4 @@
-use crate::cli::{input::combine, output::OutputType};
+use crate::cli::{input::combine, output::OutputType, };
 
 use std::{
 	net::SocketAddr,
@@ -9,40 +9,11 @@ use std::{
 
 
 use px_core::{
-	netlib::host_discovery::{
-		application::tcp::TcpProbe,
-		//socks5::{Socks5Scanner, ScanResult}
-	},
-	pool::{Worker, Pool, CRON, JobErr},
+	pool::{Worker, Pool, CRON},
 	util::{Boundary, get_max_fd},
-	model::{State as NetState},
 };
 
 const TICK_NS: u64 = 500;
-
-pub async fn connect_scan<'a>(generator: &mut combine::Feeder<'a>, results: &mut OutputType, timeout: Duration)
-{
-	let mut pool = tokio_tcp_pool::<TcpProbe, SocketAddr, SocketAddr>(timeout);
-	let mut buffer = Vec::new();
-	
-	loop {
-		if !generator.is_done() {
-			fire_from_feeder(&mut pool, &mut buffer, generator).await;
-		}
-		
-		let jobs_done = pool.tick(&mut buffer).await;	
-		
-		results.handle(&jobs_done);
-		
-		if buffer.len() == 0 && generator.is_done() && pool.job_count() == 1 {
-			break
-		}
-		
-		tokio::time::sleep(Duration::from_nanos(TICK_NS)).await;
-	}
-
-	results.handle(&pool.flush_channel());
-}
 
 pub async fn fire_from_feeder<'a, J, R, S>(pool: &mut Pool<J, R, S>, queued: &mut Vec<S>, feed: &mut combine::Feeder<'a>) -> usize
 where
@@ -62,11 +33,11 @@ where
         let feed_amt;
 	
 		if release_amt >= alloc_amt {
-            feed_amt = 0
+            feed_amt = 0;
         }
 	
 		else {
-            feed_amt = alloc_amt - release_amt
+            feed_amt = alloc_amt - release_amt;
         }
         
         if feed_amt > 0 && !feed.is_done() {
@@ -79,43 +50,42 @@ where
     0
 }
 
-pub async fn socks_scan<'a>(generator: &mut combine::Feeder<'a>, results: &mut OutputType, timeout: Duration)
-{
-    // let mut pool = tokio_tcp_pool::<Socks5Scanner, ScanResult, SocketAddr>(timeout);
-	// let mut buffer = Vec::new();
-	
-	// loop {
-	// 	if !generator.is_done() {
-	// 		pool.fire_from_feeder(&mut buffer, generator).await;
-	// 	}
-		
-	// 	let jobs_done = pool.tick(&mut buffer).await;		
-		
-	// 	results.handle(&jobs_done);
-		
-	// 	if buffer.len() == 0 && generator.is_done() && pool.job_count() == 1 {
-	// 		break
-	// 	}
-		
-	// 	tokio::time::delay_for(Duration::from_nanos(TICK_NS)).await;
-	// }
 
-	// results.handle(&pool.flush_channel());
-}
-
-fn tokio_tcp_pool<J, R, S>(timeout: Duration) -> Pool<J, R, S>
+pub async fn run_handle<'a, H, R, S>(generator: &mut combine::Feeder<'a>, results: &mut OutputType, timeout: Duration)
 where
-	J: CRON<Response = R, State = S> + std::marker::Unpin,
+	H: CRON<Response = R, State = S> + std::marker::Unpin,
 	R: Send + Sync + Clone + std::fmt::Debug + 'static,
-    S: Send + Sync + Clone + std::fmt::Debug + 'static,
-
+    S: Send + Sync + Clone + std::fmt::Debug + 'static + From<SocketAddr> + crate::cli::output::CastAs<SocketAddr>,
 {
-	let limit = match get_max_fd().unwrap() {
-		Boundary::Limited(i) => Boundary::Limited(i-100),
-		x => x
+	let mut buffer = Vec::new();
+
+    let mut pool: Pool<H, R, S> = {
+		let limit = match get_max_fd().unwrap() {
+			Boundary::Limited(i) => Boundary::Limited(i-100),
+			x => x
+		};
+
+		Pool::new(
+			Worker::new(limit, timeout)
+		)
 	};
 
-    Pool::new(
-		Worker::new(limit, timeout)
-	)
+	loop {
+		if !generator.is_done() {
+			fire_from_feeder(&mut pool, &mut buffer, generator).await;
+		}
+		
+		let jobs_done = pool.tick(&mut buffer).await;		
+		
+		results.handle(&jobs_done);
+		
+		if buffer.len() == 0 && generator.is_done() && pool.job_count() == 1 {
+			break
+		}
+		// 
+		// tokio::coop::proceed().await; ?
+		tokio::time::sleep(Duration::from_nanos(TICK_NS)).await;
+	}
+
+	results.handle(&pool.flush_channel());
 }

@@ -189,16 +189,22 @@ where
         
         // TODO(adam)
         // optimize this better
+        let poll;
+
         if jobs.len() > 0 {
             // this is safe because operations
             // aren't reflected until `lock.refresh()`
             // is executed
             lock.write(Operation::Clear);
-            return Poll::Ready(Some(jobs.clone()));
+            poll = Poll::Ready(Some(jobs.clone()));
         }
         else {
-            return Poll::Ready(None);
+            poll = Poll::Ready(None);
         }
+        
+        // whenever pre-emptive futures come out
+        // tokio::coop::proceed().await; 
+        return poll;
     }
 }
 
