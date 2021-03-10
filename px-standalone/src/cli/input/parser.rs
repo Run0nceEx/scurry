@@ -29,15 +29,17 @@ pub fn address_parser(src: &str) -> Result<AddressInput, Error> {
         // File
         return Ok(AddressInput::File(PathBuf::from(src)))
     }
-    // scanning the entire world huh
+
+    // scanning the entire world
     else if src.eq("0.0.0.0/0") {
         return Ok(AddressInput::World(WorldType::V4))
     }
 
+    // this poor bastard
     else if src.eq("::/0") {
         Ok(AddressInput::World(WorldType::V6))
     }
-    // --
+    
     else if src.contains("/") {
         //cidr
         return Ok(AddressInput::CIDR(IpCidr::from_str(src)?))

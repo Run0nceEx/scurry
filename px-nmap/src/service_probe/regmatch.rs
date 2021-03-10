@@ -1,8 +1,8 @@
-use crate::model::{Directive, MatchLineExpr};
+use super::parser::{Directive, MatchLineExpr};
 
 use regex::bytes::RegexSet;
 
-use crate::error::ErrorKind;
+use crate::error::Error;
 
 // match http-proxy-ctrl m|^WWWOFFLE Server Status\n-*\nVersion *: (\d.*)\n| p/WWWOFFLE proxy control/ v/$1/ cpe:
 
@@ -14,14 +14,14 @@ enum Ident {
 }
 
 impl Ident {
-    fn from_char(c: char) -> Result<Ident, ErrorKind> {
+    fn from_char(c: char) -> Result<Ident, Error> {
         Ok(match c {
             'a' => Ident::Application,
             'h' => Ident::Hardware,
             'o' => Ident::OperationSystem,
             c => return Err(
                 unimplemented!()
-                //ErrorKind::UnknownToken(format!("Expected char 'a', 'h', or 'o', got '{}'", c))
+                //Error::UnknownToken(format!("Expected char 'a', 'h', or 'o', got '{}'", c))
             )
         })
     }
@@ -142,15 +142,16 @@ impl AlignedSet {
         
         for item in patterns {
             regex_buf.push(item.pattern.clone());
-            mapping.push(MatchExpr::new(
-                Service(item.cpe.clone()),
-                item.name.clone(),
-                Service::new(item.service_data.clone()),
-                item.match_type,
-            ));
+            //TODO
+            // mapping.push(MatchExpr::new(
+            //     Service(item.cpe.clone()),
+            //     item.name.clone(),
+            //     Service::new(item.service_data.clone()),
+            //     item.match_type,
+            // ));
         }
 
-        regex_buf.shrink_to_fit();
+        regex_buf.shrink_to_fit(); 
         mapping.shrink_to_fit();
         
         Ok(AlignedSet {

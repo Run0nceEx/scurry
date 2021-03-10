@@ -39,7 +39,9 @@ pub fn get_max_fd() -> Result<Boundary, Box<dyn std::error::Error>> {
         }
         
         else if buf.trim().starts_with(INDICATOR) {
-            if let Some(size) = buf.split("            ").nth(1) {
+            let delimiter = "            ";
+
+            if let Some(size) = buf.split(&delimiter).nth(1) {
                 if size.starts_with("unlimited") {
                     return Ok(Boundary::Unlimited)
                 }
@@ -48,7 +50,7 @@ pub fn get_max_fd() -> Result<Boundary, Box<dyn std::error::Error>> {
                 }
             }
         }
-
+        
         buf.clear();
     }
 
@@ -58,6 +60,8 @@ pub fn get_max_fd() -> Result<Boundary, Box<dyn std::error::Error>> {
     )))
 }
 
+
+//TODO: figure out how to calculate the maximum amount of a file descriptors a process can own.
 #[cfg(target = "windows")]
 pub fn get_max_fd() -> Result<Boundary, Box<dyn std::error::Error>> {
     todo!()

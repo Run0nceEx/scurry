@@ -1,24 +1,25 @@
 use px_core::model::PortInput;
 use super::{
     regmatch::MatchExpr,
-    regmatch::AlignedSet
+    regmatch::AlignedSet,
+    parser::ProbeExpr,
 };
-
-use crate::model::{ProbeExpr, Protocol};
+use crate::error::Error;
+use super::parser::{Protocol};
 
 use std::{
+    cmp::Ordering,
     collections::{HashMap, HashSet},
     net::SocketAddr,
-    cmp::Ordering
+    num::ParseIntError
 };
 
+use regex::Regex;
 
 #[derive(Debug)]
 struct Link {
     proto: Protocol,// TCP/UDP
     payload: Vec<u8>,
-    // rarity: u8,
-    // load_ord: usize,
     name: String,
     
     ports: Vec<PortInput>,
@@ -37,31 +38,6 @@ impl Link {
     }
 }
 
-impl From<ProbeExpr> for Link {
-    fn from(x: ProbeExpr) -> Self {
-        let mut this = Self {
-            proto: x.proto,
-            // interpret bytes TODO
-            payload: construct_payload(&x.payload),
-            name: x.name,
-            ports: x.ports,
-            exclude: x.exclude,
-            tls_ports: x.tls_ports,
-            fallback: x.fallback.unwrap(),
-            lookup_set: AlignedSet::new(&x.patterns).unwrap()
-        };
-
-        this.tls_ports.shrink_to_fit();
-        this.ports.shrink_to_fit();
-        this.exclude.shrink_to_fit();
-        this.name.shrink_to_fit();
-        this.payload.shrink_to_fit();
-        this.fallback.shrink_to_fit();
-
-        this
-    }
-}
-
 pub struct ChainedProbes {
     inner: Vec<Link>,
     name_map: HashMap<String, usize>
@@ -72,6 +48,32 @@ pub struct ChainedProbes {
 // [x] rarity order + load order
 // [x] all enteries with fallbacks do exist, or go to Null 
 impl ChainedProbes {
+
+    #[inline]
+    fn inner_new(x: ProbeExpr) -> Result<Link, Error> {
+        let mut this = Link {
+            proto: x.proto,
+            // interpret bytes TODO
+            payload: construct_payload(&x.payload)?,
+            name: x.name,
+            ports: x.ports,
+            exclude: x.exclude,
+            tls_ports: x.tls_ports,
+            fallback: x.fallback.unwrap(),
+            lookup_set: AlignedSet::new(&x.matches).unwrap()
+        };
+    
+        this.tls_ports.shrink_to_fit();
+        this.ports.shrink_to_fit();
+        this.exclude.shrink_to_fit();
+        this.name.shrink_to_fit();
+        this.payload.shrink_to_fit();
+        this.fallback.shrink_to_fit();
+    
+        Ok(this)
+    }
+    
+
     #[inline]
     fn deduplicate_probes(mut last_state: (Option<String>, Vec<ProbeExpr>), probe: ProbeExpr) -> (Option<String>, Vec<ProbeExpr>) {
         if let Some(ref last_name) = last_state.0 {
@@ -88,7 +90,7 @@ impl ChainedProbes {
         last_state
     }
 
-    pub fn new(mut buf: Vec<ProbeExpr>, max_intensity: u8) -> Self {
+    pub fn new(mut buf: Vec<ProbeExpr>, max_intensity: u8) -> Result<Self, Error> {
         // sort by name
         buf.sort_by(|a, b| a.name.partial_cmp(&b.name).unwrap());
         
@@ -152,23 +154,25 @@ impl ChainedProbes {
         
         let mut name_map = HashMap::new();
         for (i, mut probe) in linked_probes.iter_mut().enumerate() {
-
             //reset None to NULL probe
             if let None = probe.fallback {
                 probe.fallback = Some("NULL".to_string());
             }
             name_map.insert(probe.name.clone(), i).unwrap();
         }
+        
+        let mut links = Vec::with_capacity(linked_probes.len());
+        for item in linked_probes {
+            links.push(Self::inner_new(item)?)
+        }
 
         // as far as we're concerned, 
         // this is now a flat list of probes that are ordered
         // first from rarity, then load order
-        Self {
-            inner: linked_probes.drain(..)
-                .map(|expr| expr.into())
-                .collect(),
+        Ok(Self {
+            inner: links,
             name_map
-        }
+        })
     }
 
     fn null(&self) -> &Link {
@@ -177,12 +181,38 @@ impl ChainedProbes {
 
 }
 
-fn construct_payload(x: &str) -> Vec<u8> {
-    unimplemented!()
+fn construct_payload(payload: &str) -> Result<Vec<u8>, Error> {
+    lazy_static::lazy_static! {
+        static ref HEX_BYTE: Regex = Regex::new("(\\x[a-hA-H0-9][a-hA-H0-9])*").unwrap();
+    }
+
+    let mut buf: Vec<u8> = Vec::new();
+    
+    let replacements: Vec<_> = HEX_BYTE.find_iter(payload)
+        .map(|match_| (match_.start(), u8::from_str_radix(&match_.as_str()[1..3], 16).unwrap()))
+        .collect();
+    
+    let mut replacement_idx: usize = 0;
+    let mut skip: usize = 0;
+
+    for (i, c) in payload.chars().enumerate() {
+        if skip > 0 { skip -= 1; continue }
+
+        match replacements.get(replacement_idx) {
+            Some((start, byte)) => {
+                //"\x00"
+                if i == *start {
+                    buf.push(*byte);
+                    replacement_idx += 1;
+                    skip=3;
+                }
+                else {
+                    buf.push(c as u8);
+                }
+            },
+            None => return Err(Error::ParseError(format!("expected replacement")))
+        }
+    }
+   
+    Ok(buf)
 }
-
-
-// needs to take all the probes and link their fallbacks correctly
-// fn linker<T: BufRead>(probes: Vec<ParsedProbe>) {
-
-// }

@@ -1,5 +1,5 @@
 mod linked;
 mod regmatch;
-mod parser;
+pub mod parser;
 
 pub use linked::ChainedProbes;

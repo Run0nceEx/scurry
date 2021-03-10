@@ -40,26 +40,26 @@ async fn scan(addr: SocketAddr) -> Result<(), Error> {
 
 #[cfg(test)]
 mod test {
-    extern crate test;
+    // extern crate test;
     
-    use super::*;
-    use tokio::runtime::Runtime;
-    use tokio::net::TcpListener;
+    // use super::*;
+    // use tokio::runtime::Runtime;
+    // use tokio::net::TcpListener;
 
-    #[bench]
-    /// Test how fast tokio's connect is.
-    fn tokio_connect(b: &mut test::Bencher) {
-        let mut rt = Runtime::new().unwrap();
-        let addr: SocketAddr = "127.0.0.1:20927".parse().unwrap();
+    // #[bench]
+    // /// Test how fast tokio's connect is.
+    // fn tokio_connect(b: &mut test::Bencher) {
+    //     let mut rt = Runtime::new().unwrap();
+    //     let addr: SocketAddr = "127.0.0.1:20927".parse().unwrap();
         
-        rt.spawn(async move {
-            let mut listener = TcpListener::bind(addr).await.unwrap();
-            loop {    
-                let (con, _addr) = listener.accept().await.unwrap();
-                drop(con);
-            }
-        });
+    //     rt.spawn(async move {
+    //         let mut listener = TcpListener::bind(addr).await.unwrap();
+    //         loop {    
+    //             let (con, _addr) = listener.accept().await.unwrap();
+    //             drop(con);
+    //         }
+    //     });
         
-        b.iter(|| rt.block_on(TcpStream::connect(addr)));
-    }
+    //     b.iter(|| rt.block_on(TcpStream::connect(addr)));
+    // }
 }

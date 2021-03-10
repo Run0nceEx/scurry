@@ -187,8 +187,6 @@ where
         lock.refresh();
         let jobs = &self.rx.read().0;
         
-        // TODO(adam)
-        // optimize this better
         let poll;
 
         if jobs.len() > 0 {

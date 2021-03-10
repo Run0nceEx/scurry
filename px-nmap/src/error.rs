@@ -1,12 +1,22 @@
 use std::path::PathBuf;
+use lazy_static::__Deref;
+
+use super::service_probe::parser::Token;
+
 
 #[derive(Debug)]
-pub enum ErrorKind {
+pub enum Error {
     ParseError(String),
-    ExpectedToken(FileLocation),
-    IO(tokio::io::Error)
+    ExpectedToken(Token),
+    IO(tokio::io::Error),
+    PxCore(px_core::error::Error),
+    Bincode(Box<bincode::ErrorKind>)
 }
+struct a(tokio::io::Error);
 
+impl Clone for a {
+    fn clone(&self) -> Self { todo!() }
+}
 
 #[derive(Debug, Clone)]
 pub struct FileLocation {
@@ -15,61 +25,47 @@ pub struct FileLocation {
     pub row: usize
 }
 
-#[derive(Debug)]
-pub struct Error {
-    err: ErrorKind,
-    file_data: Option<FileLocation>
-}
-
-impl Error {
-    pub fn new(err: ErrorKind, data: Option<FileLocation>) -> Self {
-        Self {
-            err,
-            file_data: data
-        }
-    }
-}
-
-
-impl Error {
-    #[inline(always)]
-    pub fn kind(&self) -> &ErrorKind {        
-        &self.err
-    }
-}
-
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.err.fmt(f)
-    }
-}
-
-
-impl std::fmt::Display for ErrorKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "{:?}", &self)
-    }
-}
-
-
-impl From<tokio::io::Error> for ErrorKind {
+impl From<tokio::io::Error> for Error {
     fn from(e: tokio::io::Error) -> Self {
         Self::IO(e)
     }
 }
 
-impl From<std::num::ParseIntError> for ErrorKind {
+impl From<px_core::error::Error> for Error {
+    fn from(e: px_core::error::Error) -> Self {
+        Self::PxCore(e)
+    }
+}
+
+impl From<bincode::ErrorKind> for Error {
+    fn from(e: bincode::ErrorKind) -> Self {
+        Self::Bincode(Box::new(e))
+    }
+}
+
+impl From<Box<bincode::ErrorKind>> for Error {
+    fn from(e: Box<bincode::ErrorKind>) -> Self {
+        Self::Bincode(e)
+    }
+}
+
+impl From<std::num::ParseIntError> for Error {
     fn from(x: std::num::ParseIntError) -> Self {
         Self::ParseError(x.to_string())
     }
 }
 
-impl From<std::num::ParseFloatError> for ErrorKind {
+impl From<std::num::ParseFloatError> for Error {
     fn from(x: std::num::ParseFloatError) -> Self {
         Self::ParseError(x.to_string())
     }
 }
 
 
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", &self)
+    }
+}
+
 impl std::error::Error for Error {}
-impl std::error::Error for ErrorKind {}

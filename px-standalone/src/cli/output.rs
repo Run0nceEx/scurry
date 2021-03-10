@@ -60,7 +60,7 @@ impl OutputType {
 					}
 				}
 			},
-
+			
 			OutputType::Map(map) => {
 				for (sig, state) in buf {
 					let sock = state.cast();
