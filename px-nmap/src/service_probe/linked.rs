@@ -1,17 +1,15 @@
 use px_core::model::PortInput;
 use super::{
-    regmatch::MatchExpr,
     regmatch::AlignedSet,
-    parser::ProbeExpr,
+    parser::model::{ProbeExpr, Protocol},
+    parser::MatchLineExpr,
+    
 };
 use crate::error::Error;
-use super::parser::{Protocol};
 
 use std::{
     cmp::Ordering,
-    collections::{HashMap, HashSet},
-    net::SocketAddr,
-    num::ParseIntError
+    collections::HashMap
 };
 
 use regex::Regex;
@@ -33,7 +31,7 @@ struct Link {
 }
 
 impl Link {
-    fn matches<'a>(&'a self, input_buf: &[u8], out_buf: &mut Vec<&'a MatchExpr>) {
+    fn matches<'a>(&'a self, input_buf: &[u8], out_buf: &mut Vec<&'a MatchLineExpr>) {
         self.lookup_set.match_response(input_buf, out_buf)
     }
 }

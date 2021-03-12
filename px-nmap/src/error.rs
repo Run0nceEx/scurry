@@ -1,8 +1,6 @@
 use std::path::PathBuf;
-use lazy_static::__Deref;
 
-use super::service_probe::parser::Token;
-
+use super::service_probe::parser::model::Token;
 
 #[derive(Debug)]
 pub enum Error {
@@ -12,12 +10,6 @@ pub enum Error {
     PxCore(px_core::error::Error),
     Bincode(Box<bincode::ErrorKind>)
 }
-struct a(tokio::io::Error);
-
-impl Clone for a {
-    fn clone(&self) -> Self { todo!() }
-}
-
 #[derive(Debug, Clone)]
 pub struct FileLocation {
     pub path: PathBuf,

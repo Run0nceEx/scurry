@@ -5,11 +5,10 @@ use std::{
 
 use px_core::model::PortInput;
 
-
 use crate::error::Error;
 use super::{
-    cpe::Identifier, 
-    model::{Token, Directive}
+    cpe::{Identifier, CPExpr}, 
+    model::{Token, Directive, DataField}
 };
 
 use logos::Lexer;
@@ -21,6 +20,30 @@ pub enum Flags {
     CaseSensitive,
     IgnoreWhiteSpace    
 }
+
+#[derive(Debug)]
+pub struct ServiceInfoExpr {
+    pub product_name: Option<DataField>,
+    pub version: Option<DataField>,
+    pub operating_system: Option<DataField>,
+    pub info: Option<DataField>,
+    pub hostname: Option<DataField>,
+    pub device_type: Option<DataField>
+}
+
+impl ServiceInfoExpr {
+    pub fn new() -> Self {
+        Self {
+            product_name: None,
+            version: None,
+            operating_system: None,
+            info: None,
+            hostname: None,
+            device_type: None
+        }
+    }
+}
+
 
 #[derive(Debug)]
 pub struct MatchLineExpr {
@@ -39,8 +62,8 @@ pub struct MatchLineExpr {
     pub name: String,
 
     //TODO(adam)
-    pub service_info: (),
-    pub cpe: ()
+    pub service_info: ServiceInfoExpr,
+    pub cpe: SmallVec<[CPExpr; 8]>
 }
 
 
@@ -53,7 +76,7 @@ pub fn parse_match_expr(line_buf: &str, lex: &mut Lexer<Token>) -> Result<MatchL
     let mut tokens = line_buf.split_whitespace();
     let directive = Directive::from_str(tokens.next().ok_or_else(|| Error::ExpectedToken(Token::Match))?)?;
     
-    
+    let mut service_data = ServiceInfoExpr::new();
     let mut pattern: &str;
 
     // setup buffer for saving flags
@@ -133,19 +156,19 @@ pub fn parse_match_expr(line_buf: &str, lex: &mut Lexer<Token>) -> Result<MatchL
                 flags.push(flag)
             }
         }
-
         
         //  p/Android Debug Bridge/
         //  i/auth required: $I(1,"<")/
         //  o/Android/
         //  cpe:/o:google:android/a
         //  cpe:/o:linux:linux_kernel/a
-        let data_left = &line_buf[offset..];
-        let field_buf: Vec<u8> = Vec::with_capacity(256);
+        let mut cursor = line_buf[offset..].chars();
+        let mut field_buf: String = String::with_capacity(256);
 
         let mut ignore_space = true;
         let mut inside_field = false;
         let mut delimiter: char = '/';
+        let mut service: Option<char> = None; 
 
         const WHITESPACE: [char; 4] = [' ', '\n', '\t', '\r'];
         const SERVICE_INDENTS: [char; 5] = ['p', 'v', 'i', 'o','d'];
@@ -156,6 +179,7 @@ pub fn parse_match_expr(line_buf: &str, lex: &mut Lexer<Token>) -> Result<MatchL
                     delimiter = cursor.next().unwrap();
                     ignore_space = false;
                     inside_field = true;
+                    service = Some(c);
                 }
                 else if WHITESPACE.contains(&c) { continue }
                 else if c == 'c' { // cpe:/ ?
@@ -178,15 +202,26 @@ pub fn parse_match_expr(line_buf: &str, lex: &mut Lexer<Token>) -> Result<MatchL
                     // just ensure our flags are setup correctly
                     // super cryptic - ignore_space == false && inside_field == true)
                     if crappy_xor(ignore_space, inside_field) {
-
                         // we're at the first delimiter
                         while let Some(c) = cursor.next() {
-
+                            if c != delimiter {
+                                field_buf.push(c)
+                            }
+                            else { break }
                         }
-
                         // follow until delimiter to collect field
+                        match service.unwrap() {
+                            'p' => buf_clone(&mut service_data.product_name, &field_buf),
+                            'v' => buf_clone(&mut service_data.version, &field_buf),
+                            'i' => buf_clone(&mut service_data.info, &field_buf),
+                            'o' => buf_clone(&mut service_data.operating_system, &field_buf),
+                            'd' => buf_clone(&mut service_data.device_type, &field_buf),
+                            'h' => buf_clone(&mut service_data.hostname, &field_buf),
+                            c => return Err(Error::ParseError(format!("expected charact in {:?}, got '{}'", SERVICE_INDENTS, c)))
+                        }
+                        service = None;
+                        field_buf.clear();
                     }
-                    
                     else {
                         return Err(
                             Error::ParseError(format!(
@@ -224,6 +259,10 @@ pub fn parse_match_expr(line_buf: &str, lex: &mut Lexer<Token>) -> Result<MatchL
     // })
 
     unimplemented!()
+}
+
+fn buf_clone(buf: &mut Option<DataField>, field: &str) {
+    *buf = Some(field.clone().into());
 }
 
 #[inline(always)]
