@@ -6,10 +6,8 @@ use logos::{Logos, Lexer};
 
 use crate::error::Error;
 use super::{
-    cpe::Identifier,
     match_expr::MatchLineExpr,
 };
-
 
 #[derive(Debug)]
 pub struct ZeroDuration(pub Duration);
@@ -67,7 +65,7 @@ pub enum Token {
     #[token("totalwaitms")]
     TotalWaitMs,
 
-    #[token("Exclude")]
+    #[token("Exclude T:")]
     Exclude,
 
     #[regex("[0-9]+-[0-9]+")]
@@ -83,7 +81,6 @@ pub enum Token {
     #[regex(r"[\t\n\f\r ]+", logos::skip)]
     Error,
 }
-// const DELIMITER: &'static str = "##############################NEXT PROBE##############################";
 
 #[derive(Debug, Copy, Clone)]
 pub enum Protocol {
@@ -111,13 +108,11 @@ impl FromStr for Protocol {
     }
 }
 
-
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum Directive {
     SoftMatch,
     Match
 }
-
 
 impl FromStr for Directive {
     type Err = Error;
@@ -180,6 +175,7 @@ enum HelperFunction {
     /// The second is the string ">" to indicate that the bytes are in big-endian order, or "<" to indicate little-endian.
     UnpackInt(usize, EndianSymbol)
 }
+
 impl HelperFunction {
     fn new(data: &str) -> Result<Self, Error> {
         let mut chars = data.chars();
@@ -256,8 +252,9 @@ pub struct DataField {
     schematic: String,
 }
 
+
 impl DataField {
-    pub fn interpret(&self, matches: &[regex::bytes::Match]) -> Result<String, Error>{
+    pub fn interpret(&self, matches: &[regex::bytes::Match]) -> Result<String, Error> {
         let mut ret = String::new();
         let mut lexer = InterpretToken::lexer(&self.schematic);
         let mut last = 0;
@@ -271,29 +268,34 @@ impl DataField {
                 InterpretToken::MatchNth => {
                     let idx: usize = lexer.slice()[1..].parse()?;
                     let replacement = &matches[idx];
+                    let data = String::from_utf8_lossy(replacement.as_bytes());
                     ret.push_str(&String::from_utf8_lossy(replacement.as_bytes()));
                 }
 
                 InterpretToken::Func => {
-                    ret.push_str(&HelperFunction::new(lexer.slice())?.run(&matches)?);
+                    let data = HelperFunction::new(lexer.slice())?.run(&matches)?;
+                    ret.push_str(data.as_str());
                 }
-
+                
                 InterpretToken::Error => continue
             }
         }
 
         ret.push_str(&self.schematic[last..]);
-
         Ok(ret)
     }
 
-    pub fn new(inner: String) -> Self {
+    pub fn new(mut inner: String) -> Self {
+        inner.shrink_to_fit();
         Self {
             schematic: inner
         }
     }
-}
 
+    pub fn into_inner(self) -> String {
+        self.schematic
+    }
+}
 
 impl From<String> for DataField {
     fn from(x: String) -> DataField {
@@ -305,5 +307,100 @@ impl From<String> for DataField {
 impl From<&str> for DataField {
     fn from(x: &str) -> DataField {
         DataField::new(x.to_string())
+    }
+}
+
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Identifier {
+    Application,
+    Hardware,
+    OperationSystem
+}
+
+
+impl FromStr for Identifier {
+    type Err = Error;
+
+    fn from_str(c: &str) -> Result<Self, Self::Err> {
+        Ok(match c {
+            "a" => Identifier::Application,
+            "h" => Identifier::Hardware,
+            "o" => Identifier::OperationSystem,
+            c => return Err(
+                Error::ParseError(format!("Expected char 'a', 'h', or 'o', got '{}'", c))
+            )
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CPExpr(DataField);
+impl CPExpr {
+    pub fn new(field: DataField) -> Self {
+        Self(field)
+    }
+
+    pub fn interpret(&self, matches: &[regex::bytes::Match]) -> Result<CPE, Error> {
+        self.0.interpret(matches)?.parse()
+    }
+
+    pub fn into_inner(self) -> String {
+        self.0.into_inner()
+    }
+}
+
+// cpe:/<part>:<vendor>:<product>:<version>:<update>:<edition>:<language>
+#[derive(Clone, Debug)]
+struct CPE {
+    pub part: Identifier,
+    pub vendor: Option<String>,
+    pub product: Option<String>,
+    pub version: Option<String>,
+    pub update: Option<String>,
+    pub edition: Option<String>,
+    pub language: Option<String>
+}
+
+impl CPE {
+    fn new(ident: Identifier) -> Self {
+        Self {
+            part: ident,
+            vendor: None,
+            product: None,
+            version: None,
+            update: None,
+            edition: None,
+            language: None
+        
+        }
+    }
+}
+
+#[inline]
+fn len_chk(seg: &str) -> Option<String> {
+    if seg.len() > 0 { return Some(seg.to_string()) }
+    else { return None }
+}
+
+impl FromStr for CPE {
+    type Err = Error;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut cpe = CPE::new(Identifier::Application);
+        for (i, seg) in s[3..].split(':').enumerate() {
+            match i {
+                0 => cpe.part = Identifier::from_str(&s)?,
+                1 => cpe.vendor = len_chk(seg),
+                2 => cpe.product = len_chk(seg),
+                3 => cpe.version = len_chk(seg),
+                4 => cpe.update = len_chk(seg),
+                5 => cpe.edition = len_chk(seg),
+                6 => cpe.language = len_chk(seg),
+                _ => return Err(
+                    Error::ParseError("Got too many segments in CPE expression (cpe:/:<seg>:<seg>.../)".to_string())
+                )
+            }
+        }
+        Ok(cpe)
     }
 }

@@ -58,7 +58,7 @@ impl ChainedProbes {
             exclude: x.exclude,
             tls_ports: x.tls_ports,
             fallback: x.fallback.unwrap(),
-            lookup_set: AlignedSet::new(&x.matches).unwrap()
+            lookup_set: AlignedSet::new(x.matches).unwrap()
         };
     
         this.tls_ports.shrink_to_fit();
@@ -71,7 +71,7 @@ impl ChainedProbes {
         Ok(this)
     }
     
-
+    
     #[inline]
     fn deduplicate_probes(mut last_state: (Option<String>, Vec<ProbeExpr>), probe: ProbeExpr) -> (Option<String>, Vec<ProbeExpr>) {
         if let Some(ref last_name) = last_state.0 {
@@ -186,7 +186,9 @@ fn construct_payload(payload: &str) -> Result<Vec<u8>, Error> {
 
     let mut buf: Vec<u8> = Vec::new();
     
+    
     let replacements: Vec<_> = HEX_BYTE.find_iter(payload)
+        // \x00\xFF -> [0, 255]    
         .map(|match_| (match_.start(), u8::from_str_radix(&match_.as_str()[1..3], 16).unwrap()))
         .collect();
     

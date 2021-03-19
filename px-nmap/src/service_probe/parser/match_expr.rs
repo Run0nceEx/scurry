@@ -1,24 +1,39 @@
-use std::{
-    str::FromStr,
-    time::Duration
-};
-
-use px_core::model::PortInput;
-
-use crate::error::Error;
-use super::{
-    cpe::{Identifier, CPExpr}, 
-    model::{Token, Directive, DataField}
-};
-
-use logos::Lexer;
+use std::str::FromStr;
 use smallvec::SmallVec;
 
-#[derive(Debug, PartialEq, Eq)]
+use crate::error::Error;
+use super::model::{
+    Token,
+    Directive,
+    DataField,
+    CPExpr
+};
+
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum Flags {
     UNIT,
     CaseSensitive,
-    IgnoreWhiteSpace    
+    IgnoreWhiteSpace
+}
+
+impl FromStr for Flags {
+    type Err = Error;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Flags::from_char(s.chars().nth(0).unwrap())
+    }
+}
+
+
+impl Flags {
+    fn from_char(s: char) -> Result<Self, Error> {
+        Ok(match s {
+            'i' => Flags::IgnoreWhiteSpace,
+            's' => Flags::CaseSensitive,
+            flag => return Err(
+                Error::ParseError(format!("Receieved regex flag '{}', expects 'i' or 's'", flag))
+            )
+        })
+    }
 }
 
 #[derive(Debug)]
@@ -30,6 +45,7 @@ pub struct ServiceInfoExpr {
     pub hostname: Option<DataField>,
     pub device_type: Option<DataField>
 }
+
 
 impl ServiceInfoExpr {
     pub fn new() -> Self {
@@ -56,48 +72,74 @@ pub struct MatchLineExpr {
     // This is made possible by the
     // excellent Perl Compatible Regular Expressions (PCRE) library
     // (http://www.pcre.org). 
-    pub pattern: String,
-    pub flags: [Flags; 2],
-    pub match_type: Directive,
+    pub directive: Directive,
     pub name: String,
+    pub pattern: RegexExpr,
 
-    //TODO(adam)
     pub service_info: ServiceInfoExpr,
     pub cpe: SmallVec<[CPExpr; 8]>
 }
 
-
-pub fn parse_match_expr(line_buf: &str, lex: &mut Lexer<Token>) -> Result<MatchLineExpr, Error> {
+pub fn parse_match_expr(line_buf: &str) -> Result<MatchLineExpr, Error> {
     // parsing example
     // match insteon-plm m|^\x02\x60...(.).\x9b\x06$| p/Insteon SmartLinc PLM/ i/device type: $I(1,">")/
+    
+    let mut service_data = ServiceInfoExpr::new();
+    let mut offset: usize = 0;
+    let mut cpe_buf: SmallVec<[CPExpr; 8]> = SmallVec::new();
+    
+    let mut tokens = line_buf.split_whitespace();
     // -----
     // match insteon-plm ...
     // ^ we're here
-    let mut tokens = line_buf.split_whitespace();
-    let directive = Directive::from_str(tokens.next().ok_or_else(|| Error::ExpectedToken(Token::Match))?)?;
+    let directive = {
+        let data = tokens.next()
+          .ok_or_else(|| Error::ExpectedToken(Token::Word))?;
+        offset += data.len() + 1;
+        Directive::from_str(data)?
+    };
     
-    let mut service_data = ServiceInfoExpr::new();
-    let mut pattern: &str;
-
-    // setup buffer for saving flags
-    let mut flags: SmallVec<[Flags ; 2]> = SmallVec::new();
-        
-    let name = tokens.next()
-        .ok_or_else(|| Error::ExpectedToken(Token::Word))?;
     // match insteon-plm ...
     //       ^ we're here
+    let name = tokens.next()
+        .ok_or_else(|| Error::ExpectedToken(Token::Word))?;
+    offset += 1 + name.len();
+
+    drop(tokens);
 
     // match insteon-plm m|^\x02\x60...
     //                   ^ we're here
-    let partial_query = tokens.next()
-        .ok_or_else(|| Error::ParseError(format!("Expected Regex pattern to occur")))?;
+    let (re_expr, cpe_offset) = parse_regex(&line_buf[offset..])?;
     
-    // now instead of spliting by spaces, we will just iter over the characters partially
+    // the rest of
+    //  p/Android Debug Bridge/x
+    //  i/auth required: $I(1,"<")/
+    //  o/Android/
+    //  cpe:/o:google:android/a
+    //  cpe:/o:linux:linux_kernel/a
+    eprintln!("{}", &line_buf[offset+cpe_offset..]);
+    parse_tail(&line_buf[offset+cpe_offset..].trim(), &mut service_data, &mut cpe_buf)?;
+    
+    Ok(MatchLineExpr {
+        directive,
+        name: name.to_string(),
+        pattern: re_expr,
+        service_info: service_data,
+        cpe: cpe_buf
+    })
+}
 
-    let mut cursor = partial_query.chars();
-    // m|^\x02\x60...
-    // ^ we're here
+#[derive(Debug, Clone)]
+pub struct RegexExpr {
+    pub delimiter: char,
+    pub schematic: String,
+    pub flags: [Flags; 2],
+}
+
+fn parse_regex(buf: &str) -> Result<(RegexExpr, usize), Error> {
+    let mut cursor = buf.chars();
     let regex_char = cursor.next().ok_or_else(|| Error::ParseError(String::from("Expected delimiter")))?;
+
     if regex_char == 'm' {
         // m|^\x02\x60....
         //  ^ we're here
@@ -106,7 +148,7 @@ pub fn parse_match_expr(line_buf: &str, lex: &mut Lexer<Token>) -> Result<MatchL
         
         
         // now we split on '|' (delimiter)
-        let mut regex_cursor = line_buf.split(delimiter);
+        let mut regex_cursor = buf.split(delimiter);
         
         // everything before '|'
         // 'match insteon-plm m'
@@ -115,155 +157,210 @@ pub fn parse_match_expr(line_buf: &str, lex: &mut Lexer<Token>) -> Result<MatchL
         
         // regex pattern
         // '^\x02\x60...(.).\x9b\x06$'
-        pattern = regex_cursor.next() // grabs the pattern
+        let pattern = regex_cursor.next() // grabs the pattern
             .ok_or_else(|| Error::ParseError(String::from("No match on delimiter")))?;
         
-        
-        // everything after the second '|'
+        // everything after the second '|' (delimiter)
         let tail = regex_cursor.next()
             .ok_or_else(|| Error::ParseError(String::from("No match on delimiter")))?;
         
-        // offset to enumerate where the common platform enumeration is
-        let mut offset = 0;
-        
         // sanity check
         if head.len() >= 1 && pattern.len() >= 1 {
-            let head = head.len()-1;
-            let pattern_len = pattern.len()-1;
+            let head = head.len();
+            let pattern_len = pattern.len();
 
+            // offset to seek where to cotinue parsing from
             // +2 for regex delimiters
-            offset = head+pattern_len+2; 
-        }
-
-        else {
-            return Err(Error::ParseError(format!("error reading line: {}", line_buf)))
-        }
-        
-        for c in tail.chars() {
-            offset += 1;
-            if c == ' ' {
-                break 
-            }
-            let flag = match c {
-                'i' => Flags::IgnoreWhiteSpace,
-                's' => Flags::CaseSensitive,
-                flag => return Err(
-                    Error::ParseError(format!("unknown flag ({}) found in: {}", flag, line_buf))
-                )
+            let mut offset = head+pattern_len+2;
+            
+            let mut regex_expr = RegexExpr {
+                delimiter,
+                schematic: {
+                    let mut x = pattern.to_string();
+                    x.shrink_to_fit();
+                    x
+                },
+                flags: [Flags::UNIT; 2]
             };
 
-            if !flags.contains(&flag) {
-                flags.push(flag)
+            let mut flag_idx: usize = 0;
+            eprintln!("{}", tail.len());
+            for c in tail.char_indices().take_while(|c| c.1 != ' ') {
+                let flag = Flags::from_char(c.1)?;
+                if !regex_expr.flags.contains(&flag) {
+                    regex_expr.flags[flag_idx] = flag;
+                    flag_idx += 1
+                }
+                offset += 1;
             }
-        }
-        
-        //  p/Android Debug Bridge/
-        //  i/auth required: $I(1,"<")/
-        //  o/Android/
-        //  cpe:/o:google:android/a
-        //  cpe:/o:linux:linux_kernel/a
-        let mut cursor = line_buf[offset..].chars();
-        let mut field_buf: String = String::with_capacity(256);
-
-        let mut ignore_space = true;
-        let mut inside_field = false;
-        let mut delimiter: char = '/';
-        let mut service: Option<char> = None; 
-
-        const WHITESPACE: [char; 4] = [' ', '\n', '\t', '\r'];
-        const SERVICE_INDENTS: [char; 5] = ['p', 'v', 'i', 'o','d'];
-
-        while let Some(c) = cursor.next() {
-            if ignore_space {
-                if SERVICE_INDENTS.contains(&c) {
-                    delimiter = cursor.next().unwrap();
-                    ignore_space = false;
-                    inside_field = true;
-                    service = Some(c);
-                }
-                else if WHITESPACE.contains(&c) { continue }
-                else if c == 'c' { // cpe:/ ?
-                    let mut word: [char; 5] = [' '; 5];
-                    word[0] = 'c';
-
-                    for i in 1..4 {
-                        word[i] = cursor.next().unwrap();
-                    }
-                    
-                    if word == ['c', 'p', 'e', ':', '/'] {
-                        
-                    }
-                    else {
-                        // que ? bad input ? no computo hambre
-                    }
-                }
-
-                else { 
-                    // just ensure our flags are setup correctly
-                    // super cryptic - ignore_space == false && inside_field == true)
-                    if crappy_xor(ignore_space, inside_field) {
-                        // we're at the first delimiter
-                        while let Some(c) = cursor.next() {
-                            if c != delimiter {
-                                field_buf.push(c)
-                            }
-                            else { break }
-                        }
-                        // follow until delimiter to collect field
-                        match service.unwrap() {
-                            'p' => buf_clone(&mut service_data.product_name, &field_buf),
-                            'v' => buf_clone(&mut service_data.version, &field_buf),
-                            'i' => buf_clone(&mut service_data.info, &field_buf),
-                            'o' => buf_clone(&mut service_data.operating_system, &field_buf),
-                            'd' => buf_clone(&mut service_data.device_type, &field_buf),
-                            'h' => buf_clone(&mut service_data.hostname, &field_buf),
-                            c => return Err(Error::ParseError(format!("expected charact in {:?}, got '{}'", SERVICE_INDENTS, c)))
-                        }
-                        service = None;
-                        field_buf.clear();
-                    }
-                    else {
-                        return Err(
-                            Error::ParseError(format!(
-                              "expected version information or CPE identifier, instead got '{}'", c))
-                        )
-                    }
-                }
-            }
-        }
-        
-        
-        // match Identifier::from_char(service_data.chars().nth(0).unwrap())? {
-        //     _ => {}
-        // }
-
-    }
-
-    else {
-        // syntax error?
-        // match <name> m<pattern> [<version> ...]
-        return Err(
-            Error::ParseError(format!(
-                "unknown sequence expected 'm', instead got '{}' inside of '{}' ",
-                regex_char, line_buf
-            ))
+            eprintln!("{}", &buf[..offset]);
+            return Ok((regex_expr, offset))
             
-        );
+        }
+        else { return Err(Error::ParseError(format!("error reading line: {}, did not find a head/tail", buf))) }
     }
-
-    // Ok(MatchLineExpr {
-    //     name,
-    //     pattern,
-    //     flags: flags[..],
-    //     match_type: Directive::from_str(first_token)?,  
-    // })
-
-    unimplemented!()
+    else {
+        return Err(Error::ParseError(format!("recieved '{}' (expected 'm') in {}", regex_char, buf)))
+    }
 }
 
-fn buf_clone(buf: &mut Option<DataField>, field: &str) {
-    *buf = Some(field.clone().into());
+fn parse_field_delimited(data: &str) -> Result<((char, &str), Option<&str>), Error> {
+    let mut chars = data.trim().char_indices();
+    
+    let head = chars.next()
+        .ok_or_else(|| Error::ParseError(String::from(
+            "Expected generic character (probably a serviceinfo flag ex 'v/1.0/') but received None"
+        )))?.1;
+    
+    let delim = chars.next()
+        .ok_or_else(|| Error::ParseError(String::from(
+            "Expected delimitating character (probably a serviceinfo delimiter ex 'v/1.0/') but received None"
+        )))?.1;
+
+    let idx = chars.take_while(|c| c.1 != delim).last().unwrap().0;
+    
+    let tail = match &data[idx+2..].len() {
+        0 => None,
+        _ => Some(&data[idx..])
+    };
+
+    Ok(((head, &data[2..idx+1]), tail))
 }
+
+fn parse_cpe_expr(data: &str) -> Result<(&str, Option<&str>), Error> {
+    let mut schematic = String::with_capacity(256);
+    
+    if data.starts_with("cpe:") {
+        let mut chars = data[..].char_indices();
+        schematic.push_str("cpe:");
+        
+        let delim = chars.next().ok_or_else(|| Error::ParseError(String::from(
+            "Expected delimitating character (probably a serviceinfo delimiter ex 'v/1.0/') but received None"
+        )))?.1;
+
+        let idx = chars.take_while(|c| c.1 != delim).last().unwrap().0;
+        
+        let tail = match &data[idx..].len() {
+            0 | 1 => None,
+            _ => Some(&data[idx..])
+        };
+
+        return Ok((&data[5..idx], tail))
+    }
+    else {
+        return Err(Error::ParseError(format!(
+            "got '{:?}' but expected sequence: 'cpe:/.../'", data  
+        )));
+    }
+}
+/// Parses tail end expression of the match statement, exampling the following
+///  ```notest
+///     p/Android Debug Bridge/
+///     i/auth required: $I(1,"<")/
+///     o/Android/
+///     cpe:/o:google:android/a
+///     cpe:/o:linux:linux_kernel/a
+/// ```
+fn parse_tail(mut buf: &str, expr: &mut ServiceInfoExpr, cpes: &mut SmallVec<[CPExpr; 8]>) -> Result<(), Error> {
+    const SERVICE_IDENT: [char; 6] = ['p', 'v', 'i', 'o','d', 'h'];
+    while buf.len() > 0 {
+        match parse_cpe_expr(&buf) {
+            Ok((cpe, tail)) => {
+                cpes.push(CPExpr::new(DataField::new(cpe.to_string())));
+                match tail {
+                    Some(x) => buf = x,
+                    None => break
+                }
+            },
+            
+            Err(Error::ParseError(_)) => {
+                // lets just ambigiously check its not a serviceinfo field
+                // instead of making a proper solution on how to parse the remaining fields
+                // if the CPE parser errors, we try this instead.
+                let ((head, schematic), tail) = parse_field_delimited(&buf)?;
+                match head {
+                    'p' => buf_clone(&mut expr.product_name, schematic),
+                    'v' => buf_clone(&mut expr.version, schematic),
+                    'i' => buf_clone(&mut expr.info, schematic),
+                    'o' => buf_clone(&mut expr.operating_system, schematic),
+                    'd' => buf_clone(&mut expr.device_type, &schematic),
+                    'h' => buf_clone(&mut expr.hostname, &schematic),
+                    c => return Err(Error::ParseError(format!("expected character in {:?}, got '{}'\n{}", SERVICE_IDENT, c, buf)))
+                };
+
+                match tail {
+                    Some(x) => buf = x,
+                    None => break
+                }
+            }
+            
+            Err(e) => return Err(e)
+        }
+    }
+    Ok(())
+}
+
+
 
 #[inline(always)]
-fn crappy_xor(a: bool, b: bool) -> bool { a != b || a || b }
+fn buf_clone(buf: &mut Option<DataField>, field: &str) { 
+    if field.len() > 0 {
+        *buf = Some(field.clone().into()); 
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_regex_seg() {
+        const DATA: &'static str = "m/some data/si";
+        let (re, offset) = parse_regex(&DATA).unwrap();
+        
+        assert_eq!(re.flags, [Flags::CaseSensitive, Flags::IgnoreWhiteSpace]);
+        assert_eq!(re.schematic, "some data");
+        assert_eq!(DATA.len(), offset);
+    }
+
+    #[test]
+    fn parse_service_info_seg() {
+        const DATA: &'static str = "v/some data/";
+        let ((head, cpe), tail) = parse_field_delimited(&DATA).unwrap();
+        assert_eq!(head, 'v');
+        assert_eq!(cpe, "some data");
+        assert_eq!(tail, None);
+    }
+
+    #[test]
+    fn parse_cpe_seg() {
+        const DATA: &'static str = "cpe:/a:bearware:teamtalk/";
+        let (cpe, tail) = parse_cpe_expr(&DATA).unwrap();
+        assert_eq!(tail, None);
+        assert_eq!(cpe, "a:bearware:teamtalk")
+    }
+
+    #[test]
+    fn parse_cpe() {
+        const DATA: &'static str = "cpe:/a:bearware:teamtalk/ cpe:/a:bearware:teamtalk/";
+        let (cpe, tail) = parse_cpe_expr(&DATA).unwrap();
+        assert_eq!(tail, Some(" cpe:/a:bearware:teamtalk/"));
+        assert_eq!(cpe, "a:bearware:teamtalk")
+    }
+
+    #[test]
+    fn parse_match_line() {
+        const DATA: &'static str = r"match socks5 m|^\x05\0\x05\0\0\x01.{6}HTTP|s i/No authentication required; connection ok/ cpe:/a:bearware:teamtalk/";
+        let match_expr = parse_match_expr(&DATA).unwrap();
+        
+        assert_eq!(match_expr.directive, Directive::Match);
+        assert_eq!(match_expr.name.as_str(), "socks5");
+        assert_eq!(match_expr.pattern.schematic, "^\x05\0\x05\0\0\x01.{6}HTTP");
+        assert_eq!(match_expr.pattern.flags, [Flags::CaseSensitive, Flags::UNIT]);
+        assert_eq!(match_expr.service_info.info.unwrap().into_inner().as_str(), "No authentication required; connection ok");
+        
+        let cpe = match_expr.cpe.get(0).unwrap().clone();
+        assert_eq!(cpe.into_inner().as_str(), "a:bearware:teamtalk");
+    }
+}

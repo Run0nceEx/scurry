@@ -29,7 +29,7 @@ impl AlignedSet {
     }
 
     // new(cpe: CPE, name: String, directive: Directive)
-    pub fn new(patterns: &[MatchLineExpr]) -> Result<AlignedSet, regex::Error> {
+    pub fn new(patterns: Vec<MatchLineExpr>) -> Result<AlignedSet, regex::Error> {
         // align two buffers so that RegexSet's index correlates with
         // 
         // -- self.patterns
@@ -39,14 +39,8 @@ impl AlignedSet {
         let mut mapping = Vec::new();
         
         for item in patterns {
-            regex_buf.push(item.pattern.clone());
-            //TODO
-            // mapping.push(MatchExpr::new(
-            //     Service(item.cpe.clone()),
-            //     item.name.clone(),
-            //     Service::new(item.service_data.clone()),
-            //     item.match_type,
-            // ));
+            regex_buf.push(item.pattern.schematic.clone());
+            mapping.push(item);
         }
 
         regex_buf.shrink_to_fit(); 

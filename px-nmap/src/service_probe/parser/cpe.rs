@@ -1,11 +1,6 @@
 use crate::error::Error;
 use super::model::DataField;
-use std::str::FromStr;
-
-struct Field {
-    ident: Identifier,
-    data: String
-}
+use std::{str::FromStr, unimplemented};
 
 // [independent_Fieldibute]
 // p/Clementine music player remote control/
@@ -40,13 +35,31 @@ impl FromStr for Identifier {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CPExpr {
+pub struct CPExpr(DataField);
+impl CPExpr {
+    pub fn new(field: DataField) -> Self {
+        Self(field)
+    }
+
+    pub fn interpret(&self, matches: &[regex::bytes::Match]) -> Result<CPE, Error> {
+        self.0.interpret(matches)?.parse()
+    }
+}
+
+// cpe:/<part>:<vendor>:<product>:<version>:<update>:<edition>:<language>
+struct CPE {
     pub part: Identifier,
-    pub product_name: Option<DataField>,
-    pub version: Option<DataField>,
-    pub vendor: Option<DataField>,
-    pub info: Option<DataField>,
-    pub update: Option<DataField>,
-    pub edition: Option<DataField>,
-    pub language: Option<DataField>,
+    pub vendor: Option<String>,
+    pub product: Option<String>,
+    pub version: Option<String>,
+    pub update: Option<String>,
+    pub edition: Option<String>,
+    pub language: Option<String>
+}
+
+impl FromStr for CPE {
+    type Err = Error;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        unimplemented!()
+    }
 }
