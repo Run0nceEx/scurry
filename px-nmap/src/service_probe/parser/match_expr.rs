@@ -109,16 +109,15 @@ pub fn parse_match_expr(line_buf: &str) -> Result<MatchLineExpr, Error> {
 
     // match insteon-plm m|^\x02\x60...
     //                   ^ we're here
-    let (re_expr, cpe_offset) = parse_regex(&line_buf[offset..])?;
-    
+    let (re_expr, mut cpe_offset) = parse_regex(&line_buf[offset..])?;
     // the rest of
     //  p/Android Debug Bridge/x
     //  i/auth required: $I(1,"<")/
     //  o/Android/
     //  cpe:/o:google:android/a
     //  cpe:/o:linux:linux_kernel/a
-    eprintln!("{}", &line_buf[offset+cpe_offset..]);
-    parse_tail(&line_buf[offset+cpe_offset..].trim(), &mut service_data, &mut cpe_buf)?;
+    eprintln!("{}", &line_buf[offset+cpe_offset+1..]);
+    parse_tail(&line_buf[offset+cpe_offset+1..].trim(), &mut service_data, &mut cpe_buf)?;
     
     Ok(MatchLineExpr {
         directive,
@@ -204,34 +203,46 @@ fn parse_regex(buf: &str) -> Result<(RegexExpr, usize), Error> {
     }
 }
 
-fn parse_field_delimited(data: &str) -> Result<((char, &str), Option<&str>), Error> {
-    let mut chars = data.trim().char_indices();
-    
+
+
+fn parse_field_delimited(data: &str) -> Result<((char, String), Option<&str>), Error> {
+    let mut chars = data.chars();
+
     let head = chars.next()
         .ok_or_else(|| Error::ParseError(String::from(
             "Expected generic character (probably a serviceinfo flag ex 'v/1.0/') but received None"
-        )))?.1;
+        )))?;
     
     let delim = chars.next()
         .ok_or_else(|| Error::ParseError(String::from(
             "Expected delimitating character (probably a serviceinfo delimiter ex 'v/1.0/') but received None"
-        )))?.1;
+        )))?;
 
-    let idx = chars.take_while(|c| c.1 != delim).last().unwrap().0;
+    let schematic: String = chars.take_while(|c| *c != delim).collect();
     
-    let tail = match &data[idx+2..].len() {
-        0 => None,
-        _ => Some(&data[idx..])
+    let mut tail = match &data[schematic.len()+2..].len() {
+        0  => None,
+        1 => Some(&data[schematic.len()+3..]),
+        _ => Some(&data[schematic.len()+4..])
     };
+    
+    if let Some(buf) = tail {
+        if buf.is_empty() {
+            tail = None;
+        }
+    }
 
-    Ok(((head, &data[2..idx+1]), tail))
+    eprintln!("TAIL({:?}): '{:?}' {}", &data.chars().nth(schematic.len()+2), tail, &data[schematic.len()+2..].len() );
+
+    Ok(((head, schematic), tail))
 }
 
 fn parse_cpe_expr(data: &str) -> Result<(&str, Option<&str>), Error> {
-    let mut schematic = String::with_capacity(256);
     
     if data.starts_with("cpe:") {
-        let mut chars = data[..].char_indices();
+        let mut schematic = String::with_capacity(256);
+
+        let mut chars = data.char_indices().skip(4);
         schematic.push_str("cpe:");
         
         let delim = chars.next().ok_or_else(|| Error::ParseError(String::from(
@@ -240,12 +251,13 @@ fn parse_cpe_expr(data: &str) -> Result<(&str, Option<&str>), Error> {
 
         let idx = chars.take_while(|c| c.1 != delim).last().unwrap().0;
         
-        let tail = match &data[idx..].len() {
+        let tail = match &data[2+idx..].len() {
             0 | 1 => None,
-            _ => Some(&data[idx..])
+            _ => Some(&data[2+idx..])
         };
 
-        return Ok((&data[5..idx], tail))
+        eprintln!("FOO: {}", &data[5..]);
+        return Ok((&data[5..idx+1], tail))
     }
     else {
         return Err(Error::ParseError(format!(
@@ -268,7 +280,7 @@ fn parse_tail(mut buf: &str, expr: &mut ServiceInfoExpr, cpes: &mut SmallVec<[CP
             Ok((cpe, tail)) => {
                 cpes.push(CPExpr::new(DataField::new(cpe.to_string())));
                 match tail {
-                    Some(x) => buf = x,
+                    Some(x) => buf = &x[1..],
                     None => break
                 }
             },
@@ -279,10 +291,10 @@ fn parse_tail(mut buf: &str, expr: &mut ServiceInfoExpr, cpes: &mut SmallVec<[CP
                 // if the CPE parser errors, we try this instead.
                 let ((head, schematic), tail) = parse_field_delimited(&buf)?;
                 match head {
-                    'p' => buf_clone(&mut expr.product_name, schematic),
-                    'v' => buf_clone(&mut expr.version, schematic),
-                    'i' => buf_clone(&mut expr.info, schematic),
-                    'o' => buf_clone(&mut expr.operating_system, schematic),
+                    'p' => buf_clone(&mut expr.product_name, &schematic),
+                    'v' => buf_clone(&mut expr.version, &schematic),
+                    'i' => buf_clone(&mut expr.info, &schematic),
+                    'o' => buf_clone(&mut expr.operating_system, &schematic),
                     'd' => buf_clone(&mut expr.device_type, &schematic),
                     'h' => buf_clone(&mut expr.hostname, &schematic),
                     c => return Err(Error::ParseError(format!("expected character in {:?}, got '{}'\n{}", SERVICE_IDENT, c, buf)))
@@ -334,19 +346,44 @@ mod tests {
     }
 
     #[test]
+    fn parse_service_info() {
+        const SECTIONS: &'static [(char, &str)] = &[('v', "some data"), ('i', "some crazy data"), ('h',"yeep")];
+        const DATA: &'static str = "v/some data/ i/some crazy data/ h/yeep/";
+
+        let mut sect_idx = 0;
+        let mut data = DATA.clone();
+
+        while let ((head, field), Some(tail)) = parse_field_delimited(&data).unwrap() {
+            assert_eq!(field, SECTIONS[sect_idx].1);
+            assert_eq!(head, SECTIONS[sect_idx].0);
+            sect_idx += 1;
+            data = &tail[1..];
+        }
+    }
+
+    #[test]
     fn parse_cpe_seg() {
         const DATA: &'static str = "cpe:/a:bearware:teamtalk/";
         let (cpe, tail) = parse_cpe_expr(&DATA).unwrap();
+        
         assert_eq!(tail, None);
         assert_eq!(cpe, "a:bearware:teamtalk")
     }
 
     #[test]
     fn parse_cpe() {
-        const DATA: &'static str = "cpe:/a:bearware:teamtalk/ cpe:/a:bearware:teamtalk/";
-        let (cpe, tail) = parse_cpe_expr(&DATA).unwrap();
-        assert_eq!(tail, Some(" cpe:/a:bearware:teamtalk/"));
-        assert_eq!(cpe, "a:bearware:teamtalk")
+        const SECTIONS: &'static [&'static str] = &["a:bearware:teamtalk", "o:google:android", "o:linux:linux_kernel"];
+        const DATA: &'static str = "cpe:/a:bearware:teamtalk/ cpe:/o:google:android/ cpe:/o:linux:linux_kernel/";
+        
+        let mut sect_idx = 0;
+        let mut data = DATA.clone();
+
+        while let (cpe, Some(tail)) = parse_cpe_expr(&data).unwrap() {
+            assert_eq!(cpe, SECTIONS[sect_idx]);
+            sect_idx += 1;
+            data = &tail[1..];
+        }
+
     }
 
     #[test]
@@ -356,7 +393,7 @@ mod tests {
         
         assert_eq!(match_expr.directive, Directive::Match);
         assert_eq!(match_expr.name.as_str(), "socks5");
-        assert_eq!(match_expr.pattern.schematic, "^\x05\0\x05\0\0\x01.{6}HTTP");
+        assert_eq!(match_expr.pattern.schematic, r"^\x05\0\x05\0\0\x01.{6}HTTP");
         assert_eq!(match_expr.pattern.flags, [Flags::CaseSensitive, Flags::UNIT]);
         assert_eq!(match_expr.service_info.info.unwrap().into_inner().as_str(), "No authentication required; connection ok");
         

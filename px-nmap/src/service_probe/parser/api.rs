@@ -217,12 +217,12 @@ fn remove_comment(line_buf: &str) -> &str {
 mod test {
     use super::parse;
 
-    #[tokio::test]
-    async fn no_error() {
-        let mut data = Vec::new();
-        assert!(match parse("/usr/share/nmap/nmap-service-probes", &mut data).await {
-            Ok(()) => true,
-            Err(e) => { eprintln!("{:?}", e); false}
-        });
-    }
+    // #[tokio::test]
+    // async fn no_error() {
+    //     let mut data = Vec::new();
+    //     assert!(match parse("/usr/share/nmap/nmap-service-probes", &mut data).await {
+    //         Ok(()) => true,
+    //         Err(e) => { eprintln!("{:?}", e); false}
+    //     });
+    // }
 }
