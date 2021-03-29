@@ -1,9 +1,9 @@
+
+use regex::bytes::RegexSet;
 use px_core::model::PortInput;
 use super::{
-    regmatch::AlignedSet,
     parser::model::{ProbeExpr, Protocol},
     parser::MatchLineExpr,
-    
 };
 use crate::error::Error;
 
@@ -11,7 +11,7 @@ use std::{
     cmp::Ordering,
     collections::HashMap
 };
-
+use super::hex::construct_payload;
 use regex::Regex;
 
 #[derive(Debug)]
@@ -36,6 +36,7 @@ impl Link {
     }
 }
 
+#[derive(Debug)]
 pub struct ChainedProbes {
     inner: Vec<Link>,
     name_map: HashMap<String, usize>
@@ -46,13 +47,16 @@ pub struct ChainedProbes {
 // [x] rarity order + load order
 // [x] all enteries with fallbacks do exist, or go to Null 
 impl ChainedProbes {
-
     #[inline]
     fn inner_new(x: ProbeExpr) -> Result<Link, Error> {
         let mut this = Link {
             proto: x.proto,
             // interpret bytes TODO
-            payload: construct_payload(&x.payload)?,
+            payload: {
+                let mut buffer = Vec::new();
+                construct_payload(&x.payload, &mut buffer)?;
+                buffer
+            },
             name: x.name,
             ports: x.ports,
             exclude: x.exclude,
@@ -60,7 +64,7 @@ impl ChainedProbes {
             fallback: x.fallback.unwrap(),
             lookup_set: AlignedSet::new(x.matches).unwrap()
         };
-    
+        
         this.tls_ports.shrink_to_fit();
         this.ports.shrink_to_fit();
         this.exclude.shrink_to_fit();
@@ -71,15 +75,16 @@ impl ChainedProbes {
         Ok(this)
     }
     
-    
     #[inline]
     fn deduplicate_probes(mut last_state: (Option<String>, Vec<ProbeExpr>), probe: ProbeExpr) -> (Option<String>, Vec<ProbeExpr>) {
         if let Some(ref last_name) = last_state.0 {
-            if probe.name != *last_name {
-                last_state.0 = Some(probe.name.clone());
-                last_state.1.push(probe);
+            if probe.name == *last_name {
+                //TODO(ADAM)
+                //eprintln!("duplicate probe name found: {}", &probe.name);
             }
-            else { eprintln!("duplicate probe name found: {}", probe.name) }
+            last_state.0 = Some(probe.name.clone());
+            last_state.1.push(probe);
+
         }
         else {
             // assume its the first iteration
@@ -88,7 +93,7 @@ impl ChainedProbes {
         last_state
     }
 
-    pub fn new(mut buf: Vec<ProbeExpr>, max_intensity: u8) -> Result<Self, Error> {
+    pub fn new(mut buf: Vec<ProbeExpr>) -> Result<Self, Error> {
         // sort by name
         buf.sort_by(|a, b| a.name.partial_cmp(&b.name).unwrap());
         
@@ -109,7 +114,7 @@ impl ChainedProbes {
             .collect();
         
         // use the buffer to see if anything shows up that doesn't exist
-        let mut linked: Vec<_> = dedup.drain(..).map(|mut probe| {
+        let mut linked_probes: Vec<_> = dedup.drain(..).map(|mut probe| {
             if let Some(fallback) = &mut probe.fallback {
 
                 // map to no fallback if it doesn't exist
@@ -126,7 +131,7 @@ impl ChainedProbes {
         // we have to find NULL (again, the probe.)
 
         // sort buffer by rarity, and then by load order
-        linked.sort_by(|a, b| {
+        linked_probes.sort_by(|a, b| {
             // so this little condition should
             // put NULL as index 0
             if a.name == "NULL" {
@@ -146,9 +151,9 @@ impl ChainedProbes {
         });
         
         // cut off after intensity is met
-        let mut linked_probes: Vec<_> = linked.drain(..)
-            .take_while(|probe| probe.rarity <= max_intensity)
-            .collect();
+        // let mut probes: Vec<_> = linked.drain(..)
+        //     .take_while(|probe| probe.rarity <= max_intensity)
+        //     .collect();
         
         let mut name_map = HashMap::new();
         for (i, mut probe) in linked_probes.iter_mut().enumerate() {
@@ -156,7 +161,9 @@ impl ChainedProbes {
             if let None = probe.fallback {
                 probe.fallback = Some("NULL".to_string());
             }
-            name_map.insert(probe.name.clone(), i).unwrap();
+            name_map.insert(probe.name.clone(), i);
+                //.unwrap_none()
+            
         }
         
         let mut links = Vec::with_capacity(linked_probes.len());
@@ -173,46 +180,103 @@ impl ChainedProbes {
         })
     }
 
-    fn null(&self) -> &Link {
+    pub fn null(&self) -> &Link {
         self.inner.get(0).unwrap()
     }
 
 }
 
-fn construct_payload(payload: &str) -> Result<Vec<u8>, Error> {
-    lazy_static::lazy_static! {
-        static ref HEX_BYTE: Regex = Regex::new("(\\x[a-hA-H0-9][a-hA-H0-9])*").unwrap();
+
+/// This data structure is used for matching regex patterns expressed inside `nmap-service-probes`.
+/// It allows us to store regex patterns inside a set, and their respective partner as 
+/// 
+/// this grouping is aligned so that indexes in `self.patterns` also correlate to `self.map`
+/// where information about the response's data capture
+#[derive(Debug)]
+pub struct AlignedSet {
+    patterns: RegexSet,
+    map: Vec<MatchLineExpr>
+}
+
+impl AlignedSet {
+    pub fn match_response<'a>(&'a self, input_buf: &[u8], out_buf: &mut Vec<&'a MatchLineExpr>) {
+        self.patterns
+            .matches(input_buf)
+            .into_iter()
+            .for_each(|i| {
+                out_buf.push(self.map.get(i).unwrap())
+            });
     }
 
-    let mut buf: Vec<u8> = Vec::new();
-    
-    
-    let replacements: Vec<_> = HEX_BYTE.find_iter(payload)
-        // \x00\xFF -> [0, 255]    
-        .map(|match_| (match_.start(), u8::from_str_radix(&match_.as_str()[1..3], 16).unwrap()))
-        .collect();
-    
-    let mut replacement_idx: usize = 0;
-    let mut skip: usize = 0;
+    // new(cpe: CPE, name: String, directive: Directive)
+    pub fn new(patterns: Vec<MatchLineExpr>) -> Result<AlignedSet, regex::Error> {
+        // align two buffers so that RegexSet's index correlates with
+        // 
+        // -- self.patterns
+        // -- self.cpe_lookup
+            
+        let mut regex_buf = Vec::new();
+        let mut mapping = Vec::new();
+        
+        for item in patterns {
+            regex_buf.push(item.pattern.schematic.clone());
+            mapping.push(item);
+        }
 
-    for (i, c) in payload.chars().enumerate() {
-        if skip > 0 { skip -= 1; continue }
+        regex_buf.shrink_to_fit(); 
+        mapping.shrink_to_fit();
+        
+        Ok(AlignedSet {
+            patterns: RegexSet::new(regex_buf)?,
+            map: mapping
+        })
+    }
 
-        match replacements.get(replacement_idx) {
-            Some((start, byte)) => {
-                //"\x00"
-                if i == *start {
-                    buf.push(*byte);
-                    replacement_idx += 1;
-                    skip=3;
-                }
-                else {
-                    buf.push(c as u8);
-                }
-            },
-            None => return Err(Error::ParseError(format!("expected replacement")))
+    fn iter<'s>(&'s self) -> AlignedSetIter<'s> {
+        AlignedSetIter {
+            idx: 0,
+            set: self
         }
     }
-   
-    Ok(buf)
+}
+
+struct AlignedSetIter<'set> {
+    idx: usize,
+    set: &'set AlignedSet
+}
+
+impl<'s> Iterator for AlignedSetIter<'s> {
+    type Item=(&'s str, &'s MatchLineExpr);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.set.map.iter().nth(self.idx) {
+            Some(match_expr) => {
+                let pattern = self.set
+                    .patterns
+                    .patterns()[self.idx]
+                    .as_str();
+                
+                self.idx += 1;
+                Some((pattern, match_expr))
+            }
+            None => None
+        }
+    }
+}
+
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use super::super::parser::parse;
+
+    #[tokio::test]
+    async fn align_set_behaves() {
+        let mut buf = Vec::new();
+        parse("/usr/share/nmap/nmap-service-probes", &mut buf).await.unwrap();
+        let probes = ChainedProbes::new(buf).unwrap();
+        
+        //eprintln!("{:#?}", probes);
+        //assert!(false)
+    }
 }

@@ -48,6 +48,7 @@ features = ["html_reports"]
 
 [dev-dependencies]
 tokio-test = "*"
+serde_derive = "*"
 
 [[bench]]
 name = "stats"

@@ -1,4 +1,9 @@
-use std::{borrow::Borrow, str::FromStr, time::Duration};
+use std::{
+    borrow::Borrow,
+    str::{FromStr},
+    time::Duration
+};
+use regex::{bytes::Match, bytes::Matches};
 use bincode::Options;
 
 use px_core::model::PortInput;
@@ -42,13 +47,9 @@ pub struct ProbeExpr {
 
 #[derive(Logos, Debug, PartialEq, Copy, Clone)]
 pub enum Token {
-    // Tokens can be literal strings, of any length.
     #[token("softmatch")]
     #[token("match")]
     Match,
-    
-    #[regex("[# ]*NEXT PROBE[# ]*")]
-    EndProbe,
 
     #[token("Probe")]
     Probe,
@@ -78,7 +79,7 @@ pub enum Token {
     Word,
     
     #[error]
-    #[regex(r"[\t\n\f\r ]+", logos::skip)]
+    #[regex(r"[\t\n\f\r ,]+", logos::skip)]
     Error,
 }
 
@@ -181,22 +182,29 @@ impl HelperFunction {
         let mut chars = data.chars();
         let first_char = chars.nth(1).unwrap();
 
-        let raw_arg_data: String = chars.skip_while(|c| *c != '(').take_while(|x| *x != ')').collect();
+        let raw_arg_data: String = chars.skip_while(|c| *c != '(').skip(1).take_while(|x| *x != ')').collect();
         let mut arguements = raw_arg_data.split(',');
+        
+        let idx_correct = |i: usize| {
+            if i > 0 { Ok(i-1) } 
+            else {
+                return Err(Error::ParseError("Selector index cannot be 0".to_string())) 
+            }
+        };
 
         let func = match first_char {
             'i' | 'I' => Self::UnpackInt(
-                arguements.next().unwrap().parse()?,
+                idx_correct(arguements.next().unwrap().parse()?)?,
                 arguements.next().unwrap().parse()?
             ),
 
             's' | 'S' => Self::Substitute(
-                arguements.next().unwrap().parse()?,
+                idx_correct(arguements.next().unwrap().parse()?)?,
                 arguements.next().unwrap().to_string(),
                 arguements.next().unwrap().to_string()
             ),
             'p' | 'P' => Self::Print(
-                arguements.next().unwrap().parse()?,
+                idx_correct(arguements.next().unwrap().parse()?)?
             ),
             _ => return Err(Error::ParseError(format!("Expected $I, $SUBST, or $P, got '{}'", data)))
         };
@@ -204,13 +212,20 @@ impl HelperFunction {
         Ok(func)
     }
 
-    fn run(&self, matches: &[regex::bytes::Match]) -> Result<String, Error> {
+    fn run(&self, matches: &[Match<'_>]) -> Result<String, Error> {
         let string = match self {
             HelperFunction::Print(idx) => 
-                String::from_utf8_lossy(&matches[*idx].as_bytes()).replace("�", ""),
+                String::from_utf8_lossy(
+                    matches.get(*idx)
+                        .unwrap()
+                        .as_bytes()
+                )
+                    .replace("�", "")
+                    .chars()
+                    .filter(|c| (*c as u8) > 31 && 128 > (*c as u8)).collect(),
             
             HelperFunction::Substitute(idx, original, replacement) =>
-                String::from_utf8_lossy(&matches[*idx].as_bytes()).replace(original, replacement),
+                String::from_utf8_lossy(matches.get(*idx).unwrap().as_bytes()).replace(original, replacement),
             
              HelperFunction::UnpackInt(index, endianness) => {
                 let serializer = bincode::DefaultOptions::new()
@@ -218,10 +233,10 @@ impl HelperFunction {
                 
                 let num: u64 = match endianness {
                     EndianSymbol::Big => { 
-                        serializer.with_big_endian().deserialize(&matches[*index].as_bytes())?
+                        serializer.with_big_endian().deserialize(matches.get(*index).unwrap().as_bytes())?
                     },
                     EndianSymbol::Little => {
-                        serializer.with_little_endian().deserialize(&matches[*index].as_bytes())?
+                        serializer.with_little_endian().deserialize(matches.get(*index).unwrap().as_bytes())?
                     }
                 };
 
@@ -252,9 +267,8 @@ pub struct DataField {
     schematic: String,
 }
 
-
 impl DataField {
-    pub fn interpret(&self, matches: &[regex::bytes::Match]) -> Result<String, Error> {
+    pub fn interpret(&self, matches: &[Match<'_>]) -> Result<String, Error> {
         let mut ret = String::new();
         let mut lexer = InterpretToken::lexer(&self.schematic);
         let mut last = 0;
@@ -263,21 +277,51 @@ impl DataField {
             let span = lexer.span();
             // places head from self.schematic into ret
             ret.push_str(&self.schematic[last..span.start]);
+            dbg!(&ret);
+            dbg!(&token);
+            dbg!(&lexer.slice());
+            
             last = span.end;
+
+            // TODO(ADAM)
+            // okay comment for future self
+            // every selector index (the first usize field of each `HelperFunction` - including `InterpretToken::MatchNth`) 
+            // all require we subtract 1 from the selector index (idx -= 1) the index integer)
+            // right now, we're doing this by hand
+            // but it makes more sense to instrument a structure for this at some point
+            // so we dont have a scatter brain of code here
+
             match token {
                 InterpretToken::MatchNth => {
-                    let idx: usize = lexer.slice()[1..].parse()?;
-                    let replacement = &matches[idx];
-                    let data = String::from_utf8_lossy(replacement.as_bytes());
-                    ret.push_str(&String::from_utf8_lossy(replacement.as_bytes()));
+                    // "$1" -> 1: usize
+                    let mut idx: usize = lexer.slice()[1..].parse()?;
+                    if idx == 0 {
+                        return Err(Error::ParseError(
+                            "match selector index cannot be zero ($0)".to_string()
+                        ))
+                    }
+                    idx -= 1;
+
+                    let selected = matches.get(idx);
+                    if let None = selected {
+                        return Err(Error::ParseError(format!(
+                            "match selected not found (${})", idx
+                        )))
+                    }
+
+                    let data = String::from_utf8_lossy(selected.unwrap().as_bytes());
+                    ret.push_str(&data);
                 }
 
                 InterpretToken::Func => {
-                    let data = HelperFunction::new(lexer.slice())?.run(&matches)?;
+                    // each helper func handles index correction its self
+                    let data = HelperFunction::new(lexer.slice())?
+                        .run(matches)?;
                     ret.push_str(data.as_str());
                 }
                 
-                InterpretToken::Error => continue
+                InterpretToken::Error => ret.push_str(lexer.slice())
+                
             }
         }
 
@@ -285,10 +329,11 @@ impl DataField {
         Ok(ret)
     }
 
-    pub fn new(mut inner: String) -> Self {
-        inner.shrink_to_fit();
+    pub fn new(inner: &str) -> Self {
+        let mut string = String::from(inner);
+        string.shrink_to_fit();
         Self {
-            schematic: inner
+            schematic: string
         }
     }
 
@@ -299,14 +344,14 @@ impl DataField {
 
 impl From<String> for DataField {
     fn from(x: String) -> DataField {
-        DataField::new(x)
+        DataField::new(x.as_str())
     }
 }
 
 
 impl From<&str> for DataField {
     fn from(x: &str) -> DataField {
-        DataField::new(x.to_string())
+        DataField::new(x)
     }
 }
 
@@ -341,7 +386,7 @@ impl CPExpr {
         Self(field)
     }
 
-    pub fn interpret(&self, matches: &[regex::bytes::Match]) -> Result<CPE, Error> {
+    pub fn interpret(&self, matches: &[Match]) -> Result<CPE, Error> {
         self.0.interpret(matches)?.parse()
     }
 
@@ -372,7 +417,6 @@ impl CPE {
             update: None,
             edition: None,
             language: None
-        
         }
     }
 }
@@ -403,4 +447,58 @@ impl FromStr for CPE {
         }
         Ok(cpe)
     }
+}
+
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    
+    
+    #[test]
+    fn intrepret_datafield_index() {
+        let field = DataField::new("hello $1");
+        let pattern = regex::bytes::Regex::new(r"(.*)").unwrap();
+        let matches: Vec<Match> = pattern.find_iter(b"adam").collect();
+
+        let constructed = field.interpret(&matches[..]).unwrap();
+        
+        assert_eq!(constructed, "hello adam")
+    }
+
+    #[test]
+    fn intrepret_datafield_print() {
+        let field = DataField::new(r"hello $P(1)");
+        
+        let pattern = regex::bytes::Regex::new(r"(.*)").unwrap();
+        let matches: Vec<Match> = pattern.find_iter(b"first_match\x00\x00\x00").collect();
+
+        let constructed = field.interpret(&matches[..]).unwrap();
+        assert_eq!(constructed, "hello first_match")
+    }
+
+
+    #[test]
+    fn intrepret_datafield_substitute() {
+        let field = DataField::new("hello $SUBST(1,\"_\",\".\")");
+        let pattern = regex::bytes::Regex::new(r"(.*)").unwrap();
+        let matches: Vec<Match> = pattern.find_iter(b"1_1_1_1").collect();
+
+        let constructed = field.interpret(&matches[..]).unwrap();
+        
+        assert_eq!(constructed, "hello 1.1.1.1")
+    }
+
+    // #[test]
+    // fn intrepret_datafield_unpack_int() {
+    //     let field = DataField::new("hello $SUBST(1,\"_\",\".\")");
+    //     let pattern = regex::bytes::Regex::new(r"(.*)").unwrap();
+    //     let matches: Vec<Match> = pattern.find_iter(b"1_1_1_1").collect();
+
+    //     let constructed = field.interpret(&matches[..]).unwrap();
+        
+    //     assert_eq!(constructed, "hello 1.1.1.1")
+    // }
+
 }
