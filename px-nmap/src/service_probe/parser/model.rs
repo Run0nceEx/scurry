@@ -191,17 +191,29 @@ impl HelperFunction {
                 return Err(Error::ParseError("Selector index cannot be 0".to_string())) 
             }
         };
+    
+        let clean_quotes = |s: &str| {
+            if s.contains("\\\"") { // person wants to replace the `"` character
+                "\"".to_string()
+            }
+            else if s.contains("\\'") { // person wants to replace the `'` character
+                "'".to_string()
+            }
+            else {  // deal with everything else
+                s.replace("\"", "").replace("\\'", "")
+            }
+        };
 
         let func = match first_char {
             'i' | 'I' => Self::UnpackInt(
                 idx_correct(arguements.next().unwrap().parse()?)?,
-                arguements.next().unwrap().parse()?
+                clean_quotes(arguements.next().unwrap()).parse()?
             ),
 
             's' | 'S' => Self::Substitute(
                 idx_correct(arguements.next().unwrap().parse()?)?,
-                arguements.next().unwrap().to_string(),
-                arguements.next().unwrap().to_string()
+                clean_quotes(&arguements.next().unwrap().to_string()),
+                clean_quotes(&arguements.next().unwrap().to_string())
             ),
             'p' | 'P' => Self::Print(
                 idx_correct(arguements.next().unwrap().parse()?)?
@@ -233,10 +245,10 @@ impl HelperFunction {
                 
                 let num: u64 = match endianness {
                     EndianSymbol::Big => { 
-                        serializer.with_big_endian().deserialize(matches.get(*index).unwrap().as_bytes())?
+                        serializer.with_big_endian().deserialize(dbg!(matches.get(*index).unwrap().as_bytes()))?
                     },
                     EndianSymbol::Little => {
-                        serializer.with_little_endian().deserialize(matches.get(*index).unwrap().as_bytes())?
+                        serializer.with_little_endian().deserialize(dbg!(matches.get(*index).unwrap().as_bytes()))?
                     }
                 };
 
@@ -490,15 +502,13 @@ mod tests {
         assert_eq!(constructed, "hello 1.1.1.1")
     }
 
-    // #[test]
-    // fn intrepret_datafield_unpack_int() {
-    //     let field = DataField::new("hello $SUBST(1,\"_\",\".\")");
-    //     let pattern = regex::bytes::Regex::new(r"(.*)").unwrap();
-    //     let matches: Vec<Match> = pattern.find_iter(b"1_1_1_1").collect();
+    #[test]
+    fn intrepret_datafield_unpack_int() {
+        let field = DataField::new("hello $I(1,\"<\")");
+        let pattern = regex::bytes::Regex::new(r"(.*)").unwrap();
 
-    //     let constructed = field.interpret(&matches[..]).unwrap();
-        
-    //     assert_eq!(constructed, "hello 1.1.1.1")
-    // }
-
+        let matches: Vec<Match> = pattern.find_iter(&[0;8]).collect();
+        let constructed = field.interpret(&matches[..]).unwrap();
+        assert_eq!(constructed, "hello 0")
+    }
 }
