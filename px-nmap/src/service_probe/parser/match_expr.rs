@@ -2,11 +2,14 @@ use std::str::FromStr;
 use smallvec::SmallVec;
 
 use crate::error::Error;
-use super::model::{
-    Token,
-    Directive,
-    DataField,
-    CPExpr
+use super::{
+    model::{
+        Token,
+        Directive,
+        DataField,
+        CPExpr
+    },
+    api::Meta
 };
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
@@ -80,7 +83,7 @@ pub struct MatchLineExpr {
     pub cpe: SmallVec<[CPExpr; 8]>
 }
 
-pub fn parse_match_expr(line_buf: &str) -> Result<MatchLineExpr, Error> {
+pub fn parse_match_expr(line_buf: &str, meta: &mut Meta) -> Result<MatchLineExpr, Error> {
     // parsing example
     // match insteon-plm m|^\x02\x60...(.).\x9b\x06$| p/Insteon SmartLinc PLM/ i/device type: $I(1,">")/
     
@@ -145,7 +148,6 @@ fn parse_regex(buf: &str) -> Result<(RegexExpr, usize), Error> {
         let delimiter = cursor.next()
             .ok_or_else(|| Error::ParseError(String::from("Expected delimiter")))?;
         
-        
         // now we split on '|' (delimiter)
         let mut regex_cursor = buf.split(delimiter);
         
@@ -183,7 +185,7 @@ fn parse_regex(buf: &str) -> Result<(RegexExpr, usize), Error> {
             };
 
             let mut flag_idx: usize = 0;
-            eprintln!("{}", tail.len());
+            // eprintln!("{}", tail.len());
             for c in tail.char_indices().take_while(|c| c.1 != ' ') {
                 let flag = Flags::from_char(c.1)?;
                 if !regex_expr.flags.contains(&flag) {
@@ -192,7 +194,7 @@ fn parse_regex(buf: &str) -> Result<(RegexExpr, usize), Error> {
                 }
                 offset += 1;
             }
-            eprintln!("{}", &buf[..offset]);
+            // eprintln!("{}", &buf[..offset]);
             return Ok((regex_expr, offset))
             
         }
@@ -202,8 +204,6 @@ fn parse_regex(buf: &str) -> Result<(RegexExpr, usize), Error> {
         return Err(Error::ParseError(format!("recieved '{}' (expected 'm') in {}", regex_char, buf)))
     }
 }
-
-
 
 fn parse_field_delimited(data: &str) -> Result<((char, String), Option<&str>), Error> {
     let mut chars = data.chars();
@@ -238,7 +238,6 @@ fn parse_field_delimited(data: &str) -> Result<((char, String), Option<&str>), E
 }
 
 fn parse_cpe_expr(data: &str) -> Result<(&str, Option<&str>), Error> {
-    
     if data.starts_with("cpe:") {
         let mut schematic = String::with_capacity(256);
 
@@ -278,7 +277,7 @@ fn parse_tail(mut buf: &str, expr: &mut ServiceInfoExpr, cpes: &mut SmallVec<[CP
     while buf.len() > 0 {
         match parse_cpe_expr(&buf) {
             Ok((cpe, tail)) => {
-                cpes.push(CPExpr::new(DataField::new(cpe.to_string())));
+                cpes.push(CPExpr::new(DataField::from(cpe.to_string())));
                 match tail {
                     Some(x) => buf = &x[1..],
                     None => break
@@ -389,7 +388,8 @@ mod tests {
     #[test]
     fn parse_match_line() {
         const DATA: &'static str = r"match socks5 m|^\x05\0\x05\0\0\x01.{6}HTTP|s i/No authentication required; connection ok/ cpe:/a:bearware:teamtalk/";
-        let match_expr = parse_match_expr(&DATA).unwrap();
+        let mut meta = Meta::new("N/A");
+        let match_expr = parse_match_expr(&DATA, &mut meta).unwrap();
         
         assert_eq!(match_expr.directive, Directive::Match);
         assert_eq!(match_expr.name.as_str(), "socks5");

@@ -1,4 +1,4 @@
-use std::{str::FromStr, time::Duration, unimplemented};
+use std::{str::FromStr, time::Duration};
 
 use tokio::{
     fs::File, 
@@ -32,7 +32,8 @@ impl FileError {
 pub struct Meta {
     pub filepath: String,
     pub col: usize,
-    pub span: std::ops::Range<usize>
+    pub span: std::ops::Range<usize>,
+    pub use_lexer_span: bool,
 }
 
 impl Meta {
@@ -40,7 +41,8 @@ impl Meta {
         Self {
             filepath: name.to_string(),
             col: 0,
-            span: 0..0
+            span: 0..0,
+            use_lexer_span: true
         }
     }
 }
@@ -80,15 +82,6 @@ fn probe_declare_expr(line: &str, lex: &mut Lexer<Token>, expr: &mut ProbeExpr) 
     }   
 }
 
-#[inline]
-fn handle_err<T, E>(data: Result<T, E>, meta: &Meta) -> Result<T, FileError>
-where E: Into<Error> {
-    match data {
-        Ok(x) => return Ok(x),
-        Err(e) => return Err(FileError::new(meta.clone(), e.into()))
-    }
-}
-
 pub async fn parse(path: &str, buf: &mut Vec<ProbeExpr>) -> Result<(), FileError> {
     let fd = File::open(path).await.unwrap();
     let mut bookkeeping = Meta::new(path);
@@ -96,34 +89,51 @@ pub async fn parse(path: &str, buf: &mut Vec<ProbeExpr>) -> Result<(), FileError
     let mut fd = BufReader::new(fd);
     let mut line = String::new();
     let mut probe = ProbeExpr::default();
-    
-    loop {
+
+    'read_line: loop {
         match fd.read_line(&mut line).await {
             Ok(n) => {
-                if n == 0 { break }
-                else { 
-                    let line = remove_comment(line.as_str());
-                    let mut lexer: Lexer<Token> = Lexer::new(line);
+                let mut trimmed = line.trim();
 
-                    match parse_line(&line, &mut probe, &mut lexer) {
-                        Ok(ready) => {
-                            if ready {
-                                buf.push(probe);
-                                probe = ProbeExpr::default();
-                            }
-                        }
-                        Err(e) => {
-                            bookkeeping.span = lexer.span();
-                            return Err(FileError::new(bookkeeping, e))
-                        }
+                'input_check: loop {   
+                    let comment_flag = trimmed.starts_with("#");
+                    let next_probe_flag = trimmed.contains("NEXT PROBE");
+                    
+                    if n == 0 { break 'read_line}
+                    else if trimmed.len() == 0 { continue 'read_line }
+                    else if comment_flag && !next_probe_flag { continue 'read_line }
+                    else if comment_flag && next_probe_flag { 
+                        //dbg!(&probe);
+                        buf.push(probe);
+                        probe = ProbeExpr::default();
+                        continue 'read_line;
+                    }
+                    else if trimmed.contains("#") {
+                        trimmed = remove_comment(trimmed);
+                        continue 'input_check
+                    }
+                    else {
+                        break 'input_check
                     }
                 }
+                
+                let mut lexer: Lexer<Token> = Lexer::new(trimmed);
+                
+                if let Err(e) = parse_line(&trimmed, &mut probe, &mut lexer, &mut bookkeeping) {
+                    if bookkeeping.use_lexer_span {
+                        bookkeeping.span = lexer.span();
+                    }
+                    return Err(FileError::new(bookkeeping, e))
+                }
+                
                 bookkeeping.col += 1;
+                line.clear();
             }
 
             Err(e) => {
                 return Err(FileError::new(bookkeeping, e.into()))
             }
+            
         }
     }
 
@@ -131,14 +141,16 @@ pub async fn parse(path: &str, buf: &mut Vec<ProbeExpr>) -> Result<(), FileError
     Ok(())
 }
 
-fn parse_line(line: &str, expr: &mut ProbeExpr, lex: &mut Lexer<Token>) -> Result<bool, Error> {
-    let line = remove_comment(line);
-
+fn parse_line(line: &str, expr: &mut ProbeExpr, lex: &mut Lexer<Token>, meta: &mut Meta) -> Result<(), Error> {
     if let Some(token) = lex.next() {
         match token {
             Token::Probe => probe_declare_expr(&line, lex, expr)?,
-            Token::Match => expr.matches.push(parse_match_expr(&line)?),
             
+            Token::Match => {
+                meta.use_lexer_span = false;
+                expr.matches.push(parse_match_expr(&line, meta)?);
+            }
+
             Token::WrappedWaitMs => expr.wait_wrapped_ms = match lex.next() {
                 Some(Token::Num) => ZeroDuration(Duration::from_millis(lex.slice().parse::<u64>()?)),
                  _ => return Err(Error::ExpectedToken(Token::Num))
@@ -179,50 +191,37 @@ fn parse_line(line: &str, expr: &mut ProbeExpr, lex: &mut Lexer<Token>) -> Resul
                 }
             }
 
-            Token::Error => {}
-            Token::Num   => return Ok(false),
-            Token::Rng   => return Ok(false),
-            Token::Word  => return Ok(false),
-            Token::EndProbe => return Ok(true),
+            _ => return Err(Error::ParseError(format!(
+                "Unexpected token at beginning of the stream, got '{}', expected ...", line.split(' ').next().unwrap(), 
+            )))
         }
     }
-
-    Ok(false)
+    Ok(())
 }
 
 fn remove_comment(line_buf: &str) -> &str {
-    let tail_position = line_buf
+    let last_idx = line_buf
         .char_indices()
-        .take_while(|c| c.1 != '#')
+        .take_while(|(i, c)| *c != '#')
         .last()
         .unwrap()
         .0;
-    
-    let pound_sign_amount = line_buf[tail_position..]
-        .char_indices()
-        .take_while(|(_, c)| *c == '#')
-        .last()
-        .unwrap()
-        .0;
-    
-    if pound_sign_amount == 30 || tail_position == 0 {
-        // "###... NEXT PROBE ###..."
-        return line_buf
-    }
-
-    return &line_buf[..tail_position-1];
+    dbg!(&line_buf);
+    dbg!(&line_buf[..last_idx])
 }
 
 #[cfg(test)]
 mod test {
     use super::parse;
+   
+    #[tokio::test]
+    async fn parse_database() {
+        let mut data = Vec::new();
+        parse("/usr/share/nmap/nmap-service-probes", &mut data).await.unwrap();
 
-    // #[tokio::test]
-    // async fn no_error() {
-    //     let mut data = Vec::new();
-    //     assert!(match parse("/usr/share/nmap/nmap-service-probes", &mut data).await {
-    //         Ok(()) => true,
-    //         Err(e) => { eprintln!("{:?}", e); false}
-    //     });
-    // }
+        
+    }
+
+    async fn bookkeep_using_lexer() {}
+    async fn bookkeep_using_meta() {}
 }
