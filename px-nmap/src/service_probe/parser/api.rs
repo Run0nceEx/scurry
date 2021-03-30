@@ -1,4 +1,5 @@
 use std::{str::FromStr, time::Duration};
+use px_common::netport::PortInput;
 
 use tokio::{
     fs::File, 
@@ -7,7 +8,7 @@ use tokio::{
 
 use crate::error::Error;
 use logos::{Lexer, Logos};
-use px_core::model::PortInput;
+
 use super::{
     model::{Token, Protocol, ProbeExpr, ZeroDuration},
     match_expr::parse_match_expr
@@ -89,8 +90,10 @@ pub async fn parse(path: &str, buf: &mut Vec<ProbeExpr>) -> Result<(), FileError
     let mut fd = BufReader::new(fd);
     let mut line = String::new();
     let mut probe = ProbeExpr::default();
-
+    //let mut i = 0;
     'read_line: loop {
+        bookkeeping.col += 1;
+        line.clear();
         match fd.read_line(&mut line).await {
             Ok(n) => {
                 let mut trimmed = line.trim();
@@ -113,6 +116,7 @@ pub async fn parse(path: &str, buf: &mut Vec<ProbeExpr>) -> Result<(), FileError
                         continue 'input_check
                     }
                     else {
+                        println!("parsed: {}", &trimmed);
                         break 'input_check
                     }
                 }
@@ -126,14 +130,11 @@ pub async fn parse(path: &str, buf: &mut Vec<ProbeExpr>) -> Result<(), FileError
                     return Err(FileError::new(bookkeeping, e))
                 }
                 
-                bookkeeping.col += 1;
-                line.clear();
             }
 
             Err(e) => {
                 return Err(FileError::new(bookkeeping, e.into()))
             }
-            
         }
     }
 
@@ -142,7 +143,8 @@ pub async fn parse(path: &str, buf: &mut Vec<ProbeExpr>) -> Result<(), FileError
 }
 
 fn parse_line(line: &str, expr: &mut ProbeExpr, lex: &mut Lexer<Token>, meta: &mut Meta) -> Result<(), Error> {
-    if let Some(token) = lex.next() {
+    let token = lex.next().unwrap();
+    println!("token: {:?}", &token);
         match token {
             Token::Probe => probe_declare_expr(&line, lex, expr)?,
             
@@ -192,9 +194,9 @@ fn parse_line(line: &str, expr: &mut ProbeExpr, lex: &mut Lexer<Token>, meta: &m
             }
 
             _ => return Err(Error::ParseError(format!(
-                "Unexpected token at beginning of the stream, got '{}', expected ...", line.split(' ').next().unwrap(), 
+                "Unexpected token at beginning of the stream, got '{:?}', expected ...", line.split(' ').nth(0), 
             )))
-        }
+        //}
     }
     Ok(())
 }
@@ -204,10 +206,10 @@ fn remove_comment(line_buf: &str) -> &str {
         .char_indices()
         .take_while(|(i, c)| *c != '#')
         .last()
-        .unwrap()
+        .unwrap_or((line_buf.len()-1, '_'))
         .0;
-    dbg!(&line_buf);
-    dbg!(&line_buf[..last_idx])
+    //dbg!(&line_buf);
+    &line_buf[..last_idx]
 }
 
 #[cfg(test)]
@@ -219,7 +221,9 @@ mod test {
         let mut data = Vec::new();
         parse("/usr/share/nmap/nmap-service-probes", &mut data).await.unwrap();
 
-        
+        //dbg!(data);
+
+        assert_eq!(&data.get(1).unwrap().name, "NULL");
     }
 
     async fn bookkeep_using_lexer() {}
