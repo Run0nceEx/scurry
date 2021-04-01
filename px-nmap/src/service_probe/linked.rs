@@ -1,6 +1,7 @@
 
 use regex::bytes::RegexSet;
-use px_core::model::PortInput;
+use px_common::netport::PortInput;
+
 use super::{
     parser::model::{ProbeExpr, Protocol},
     parser::MatchLineExpr,
@@ -13,6 +14,10 @@ use std::{
 };
 use super::hex::construct_payload;
 use regex::Regex;
+
+
+#[derive(Debug)]
+pub struct LinkGuard<'a>(&'a Link);
 
 #[derive(Debug)]
 struct Link {
@@ -180,8 +185,8 @@ impl ChainedProbes {
         })
     }
 
-    pub fn null(&self) -> &Link {
-        self.inner.get(0).unwrap()
+    pub fn null(&self) -> LinkGuard {
+        LinkGuard(self.inner.get(0).unwrap())
     }
 
 }
@@ -265,18 +270,18 @@ impl<'s> Iterator for AlignedSetIter<'s> {
 }
 
 
-#[cfg(test)]
-mod test {
-    use super::*;
-    use super::super::parser::parse;
+// #[cfg(test)]
+// mod test {
+//     use super::*;
+//     use super::super::parser::parse;
 
-    #[tokio::test]
-    async fn align_set_behaves() {
-        let mut buf = Vec::new();
-        parse("/usr/share/nmap/nmap-service-probes", &mut buf).await.unwrap();
-        let probes = ChainedProbes::new(buf).unwrap();
+//     #[tokio::test]
+//     async fn align_set_behaves() {
+//         let mut buf = Vec::new();
+//         parse("/usr/share/nmap/nmap-service-probes", &mut buf).await.unwrap();
+//         let probes = ChainedProbes::new(buf).unwrap();
         
-        //eprintln!("{:#?}", probes);
-        //assert!(false)
-    }
-}
+//         //eprintln!("{:#?}", probes);
+//         //assert!(false)
+//     }
+// }

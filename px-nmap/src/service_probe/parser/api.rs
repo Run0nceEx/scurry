@@ -106,7 +106,6 @@ pub async fn parse(path: &str, buf: &mut Vec<ProbeExpr>) -> Result<(), FileError
                     else if trimmed.len() == 0 { continue 'read_line }
                     else if comment_flag && !next_probe_flag { continue 'read_line }
                     else if comment_flag && next_probe_flag { 
-                        //dbg!(&probe);
                         buf.push(probe);
                         probe = ProbeExpr::default();
                         continue 'read_line;
@@ -144,7 +143,6 @@ pub async fn parse(path: &str, buf: &mut Vec<ProbeExpr>) -> Result<(), FileError
 
 fn parse_line(line: &str, expr: &mut ProbeExpr, lex: &mut Lexer<Token>, meta: &mut Meta) -> Result<(), Error> {
     let token = lex.next().unwrap();
-    println!("token: {:?}", &token);
         match token {
             Token::Probe => probe_declare_expr(&line, lex, expr)?,
             

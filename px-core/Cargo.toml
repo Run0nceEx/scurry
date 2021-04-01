@@ -39,8 +39,13 @@ hashbrown = "*"
 smallvec = "*"
 rand = "*"
 serde = "*"
+
+px-common = { path = "../px-common" }
+
 # Dependency conflict patches
 syn = "^1.0.33"
+
+
 
 [dev-dependencies.criterion]
 version = "0.3"
@@ -49,6 +54,7 @@ features = ["html_reports"]
 [dev-dependencies]
 tokio-test = "*"
 serde_derive = "*"
+tokio = { version = "*", features = ["rt-multi-thread"]}
 
 [[bench]]
 name = "stats"

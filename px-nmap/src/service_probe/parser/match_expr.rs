@@ -119,8 +119,12 @@ pub fn parse_match_expr(line_buf: &str, meta: &mut Meta) -> Result<MatchLineExpr
     //  o/Android/
     //  cpe:/o:google:android/a
     //  cpe:/o:linux:linux_kernel/a
-    eprintln!("{}", &line_buf[offset+cpe_offset+1..]);
-    parse_tail(&line_buf[offset+cpe_offset+1..].trim(), &mut service_data, &mut cpe_buf)?;
+    // eprintln!("{}", &line_buf[offset+cpe_offset+1..]);
+    if offset == line_buf.trim().len() {
+        println!("NEEDS MORE POWA {},{}", offset, cpe_offset)
+        
+    }
+    parse_tail(&line_buf[offset+cpe_offset..].trim(), &mut service_data, &mut cpe_buf)?;
     
     Ok(MatchLineExpr {
         directive,
@@ -232,7 +236,7 @@ fn parse_field_delimited(data: &str) -> Result<((char, String), Option<&str>), E
         }
     }
 
-    eprintln!("TAIL({:?}): '{:?}' {}", &data.chars().nth(schematic.len()+2), tail, &data[schematic.len()+2..].len() );
+    // eprintln!("TAIL({:?}): '{:?}' {}", &data.chars().nth(schematic.len()+2), tail, &data[schematic.len()+2..].len() );
 
     Ok(((head, schematic), tail))
 }
@@ -255,7 +259,6 @@ fn parse_cpe_expr(data: &str) -> Result<(&str, Option<&str>), Error> {
             _ => Some(&data[2+idx..])
         };
 
-        eprintln!("FOO: {}", &data[5..]);
         return Ok((&data[5..idx+1], tail))
     }
     else {

@@ -2,5 +2,7 @@
 members = [
   "px-core",
   "px-nmap",
-  "px-standalone"
+  # "px-standalone",
+  "px-common",
+  "nmap-service-probes-linter"
 ]

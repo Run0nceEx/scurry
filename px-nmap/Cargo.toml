@@ -10,13 +10,14 @@ edition = "2018"
 name = "px_nmap"
 
 [dependencies]
-px-core = { path = "../px-core" }
 regex = "1.4.3"
 smallvec = "*"
 logos = "0.12"
-tokio = { version = "1.2.0", features = ["io-util"] }
+tokio = { version = "1", features = ["io-util"] }
 lazy_static = "*"
 bincode = "*"
+
+px-common = { path = "../px-common" }
 
 [dev-dependencies]
 tokio = { version = "1.2.0", features = ["io-util", "rt", "macros"] }

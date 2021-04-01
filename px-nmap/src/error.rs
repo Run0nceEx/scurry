@@ -1,3 +1,5 @@
+
+
 use std::path::PathBuf;
 
 use super::service_probe::parser::model::Token;
@@ -7,7 +9,7 @@ pub enum Error {
     ParseError(String),
     ExpectedToken(Token),
     IO(tokio::io::Error),
-    PxCore(px_core::error::Error),
+    PortParser(px_common::netport::Error),
     Bincode(Box<bincode::ErrorKind>)
 }
 #[derive(Debug, Clone)]
@@ -23,9 +25,9 @@ impl From<tokio::io::Error> for Error {
     }
 }
 
-impl From<px_core::error::Error> for Error {
-    fn from(e: px_core::error::Error) -> Self {
-        Self::PxCore(e)
+impl From<px_common::netport::Error> for Error {
+    fn from(e: px_common::netport::Error) -> Self {
+        Self::PortParser(e)
     }
 }
 
