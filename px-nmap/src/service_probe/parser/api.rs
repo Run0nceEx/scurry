@@ -1,4 +1,5 @@
 use std::{str::FromStr, time::Duration};
+use px_common::netport::PortInput;
 
 use tokio::{
     fs::File, 
@@ -7,16 +8,24 @@ use tokio::{
 
 use crate::error::Error;
 use logos::{Lexer, Logos};
-use px_core::model::PortInput;
+
 use super::{
     model::{Token, Protocol, ProbeExpr, ZeroDuration},
     match_expr::parse_match_expr
 };
 
+
+
+/// Allows our custom parsing to ask for our buffer to keep loading data. 
+enum BufferPipeline {
+    ContinueLoading(String),
+    Continue
+}
+
 #[derive(Debug)]
 pub struct FileError {
-    cursor: Meta,
-    error: Error,
+    pub cursor: Meta,
+    pub error: Error,
 }
 
 impl FileError {
@@ -89,8 +98,11 @@ pub async fn parse(path: &str, buf: &mut Vec<ProbeExpr>) -> Result<(), FileError
     let mut fd = BufReader::new(fd);
     let mut line = String::new();
     let mut probe = ProbeExpr::default();
+    //let mut i = 0;
 
     'read_line: loop {
+        bookkeeping.col += 1;
+        line.clear();
         match fd.read_line(&mut line).await {
             Ok(n) => {
                 let mut trimmed = line.trim();
@@ -103,37 +115,33 @@ pub async fn parse(path: &str, buf: &mut Vec<ProbeExpr>) -> Result<(), FileError
                     else if trimmed.len() == 0 { continue 'read_line }
                     else if comment_flag && !next_probe_flag { continue 'read_line }
                     else if comment_flag && next_probe_flag { 
-                        //dbg!(&probe);
                         buf.push(probe);
                         probe = ProbeExpr::default();
                         continue 'read_line;
                     }
-                    else if trimmed.contains("#") {
-                        trimmed = remove_comment(trimmed);
-                        continue 'input_check
-                    }
+                    // else if trimmed.contains("#") {
+                    //     trimmed = remove_comment(trimmed);
+                    //     continue 'input_check
+                    // }
                     else {
+                        //println!("parsed: {}", &trimmed);
                         break 'input_check
                     }
                 }
                 
                 let mut lexer: Lexer<Token> = Lexer::new(trimmed);
-                
+
                 if let Err(e) = parse_line(&trimmed, &mut probe, &mut lexer, &mut bookkeeping) {
                     if bookkeeping.use_lexer_span {
                         bookkeeping.span = lexer.span();
                     }
                     return Err(FileError::new(bookkeeping, e))
                 }
-                
-                bookkeeping.col += 1;
-                line.clear();
             }
 
             Err(e) => {
                 return Err(FileError::new(bookkeeping, e.into()))
             }
-            
         }
     }
 
@@ -142,7 +150,9 @@ pub async fn parse(path: &str, buf: &mut Vec<ProbeExpr>) -> Result<(), FileError
 }
 
 fn parse_line(line: &str, expr: &mut ProbeExpr, lex: &mut Lexer<Token>, meta: &mut Meta) -> Result<(), Error> {
-    if let Some(token) = lex.next() {
+    
+    meta.use_lexer_span = true;
+    let token = lex.next().unwrap();
         match token {
             Token::Probe => probe_declare_expr(&line, lex, expr)?,
             
@@ -150,6 +160,11 @@ fn parse_line(line: &str, expr: &mut ProbeExpr, lex: &mut Lexer<Token>, meta: &m
                 meta.use_lexer_span = false;
                 expr.matches.push(parse_match_expr(&line, meta)?);
             }
+
+            Token::Rarity => expr.rarity = match lex.next() {
+                Some(Token::Num) => lex.slice().parse::<u8>()?,
+                 _ => return Err(Error::ExpectedToken(Token::Num))
+            },
 
             Token::WrappedWaitMs => expr.wait_wrapped_ms = match lex.next() {
                 Some(Token::Num) => ZeroDuration(Duration::from_millis(lex.slice().parse::<u64>()?)),
@@ -185,16 +200,24 @@ fn parse_line(line: &str, expr: &mut ProbeExpr, lex: &mut Lexer<Token>, meta: &m
                 while let Some(token) = lex.next() {
                     match token {
                         Token::Num | Token::Rng => { expr.exclude.push(PortInput::from_str(lex.slice())?); }
-                        Token::Error => {}
                         _ => return Err(Error::ExpectedToken(Token::Rng))   
                     }
                 }
             }
 
-            _ => return Err(Error::ParseError(format!(
-                "Unexpected token at beginning of the stream, got '{}', expected ...", line.split(' ').next().unwrap(), 
+            Token::Fallback => match lex.next() {
+                Some(Token::Word) => expr.fallback.extend(
+                    lex.slice()
+                        .split(",")
+                        .map(|s| s.to_string())
+                    ),
+                 _ => return Err(Error::ExpectedToken(Token::Num))
+            },
+
+            token => return Err(Error::ParseError(format!(
+                "Unexpected token at beginning of the stream, got 'Token::{:?}' ({})", token, line.split(' ').nth(0).unwrap(), 
             )))
-        }
+        //}
     }
     Ok(())
 }
@@ -204,10 +227,10 @@ fn remove_comment(line_buf: &str) -> &str {
         .char_indices()
         .take_while(|(i, c)| *c != '#')
         .last()
-        .unwrap()
+        .unwrap_or((line_buf.len()-1, '_'))
         .0;
-    dbg!(&line_buf);
-    dbg!(&line_buf[..last_idx])
+    //dbg!(&line_buf);
+    &line_buf[..last_idx]
 }
 
 #[cfg(test)]
@@ -219,7 +242,8 @@ mod test {
         let mut data = Vec::new();
         parse("/usr/share/nmap/nmap-service-probes", &mut data).await.unwrap();
 
-        
+        //dbg!(data);
+        assert_eq!(&data.get(1).unwrap().name, "NULL");
     }
 
     async fn bookkeep_using_lexer() {}

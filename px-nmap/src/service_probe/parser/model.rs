@@ -6,7 +6,8 @@ use std::{
 use regex::{bytes::Match, bytes::Matches};
 use bincode::Options;
 
-use px_core::model::PortInput;
+use px_common::netport::PortInput;
+
 use logos::{Logos, Lexer};
 
 use crate::error::Error;
@@ -40,9 +41,9 @@ pub struct ProbeExpr {
     pub exclude: Vec<PortInput>,
     pub tls_ports: Vec<PortInput>,
     pub matches: Vec<MatchLineExpr>,
-    pub fallback: Option<String>,
     pub wait_total_ms: ZeroDuration,
     pub wait_wrapped_ms: ZeroDuration,
+    pub fallback: Vec<String>,
 }
 
 #[derive(Logos, Debug, PartialEq, Copy, Clone)]
@@ -54,10 +55,16 @@ pub enum Token {
     #[token("Probe")]
     Probe,
     
+    #[token("rarity")]
+    Rarity,
+
+    #[token("fallback")]
+    Fallback,
+
     #[token("tcpwrappedms")]
     WrappedWaitMs,
 
-    #[token("ssl_ports")]
+    #[token("sslports")]
     SslPorts,
 
     #[token("ports")]
@@ -69,15 +76,15 @@ pub enum Token {
     #[token("Exclude T:")]
     Exclude,
 
-    #[regex("[0-9]+-[0-9]+")]
+    #[regex("[0-9]+-[0-9]+",priority = 1)]
     Rng,
 
     #[regex("[0-9]+", priority = 2)]
     Num,
 
-    #[regex("[a-zA-Z0-9]+", priority = 3)]
+    #[regex("[a-zA-Z0-9]+")]
     Word,
-    
+
     #[error]
     #[regex(r"[\t\n\f\r ,]+", logos::skip)]
     Error,
@@ -409,7 +416,7 @@ impl CPExpr {
 
 // cpe:/<part>:<vendor>:<product>:<version>:<update>:<edition>:<language>
 #[derive(Clone, Debug)]
-struct CPE {
+pub struct CPE {
     pub part: Identifier,
     pub vendor: Option<String>,
     pub product: Option<String>,
@@ -453,7 +460,7 @@ impl FromStr for CPE {
                 5 => cpe.edition = len_chk(seg),
                 6 => cpe.language = len_chk(seg),
                 _ => return Err(
-                    Error::ParseError("Got too many segments in CPE expression (cpe:/:<seg>:<seg>.../)".to_string())
+                    Error::ParseError("Got too many segments in CPE expression (cpe:/:<seg>:<seg>.../[a])".to_string())
                 )
             }
         }
