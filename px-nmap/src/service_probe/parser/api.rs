@@ -236,13 +236,23 @@ fn remove_comment(line_buf: &str) -> &str {
 #[cfg(test)]
 mod test {
     use super::parse;
-   
+    use std::{
+        path::PathBuf,
+        str::FromStr
+    };
+    
+
     #[tokio::test]
     async fn parse_database() {
         let mut data = Vec::new();
-        parse("/usr/share/nmap/nmap-service-probes", &mut data).await.unwrap();
+        let mut path = PathBuf::from_str(&std::env::args().nth(0).unwrap()).unwrap();
+        for _ in 0..4 {
+            path.pop();
+        }
 
-        //dbg!(data);
+        path.push("share/nmap/nmap-service-probes");
+        parse(&path.to_string_lossy(), &mut data).await.unwrap();
+
         assert_eq!(&data.get(1).unwrap().name, "NULL");
     }
 
