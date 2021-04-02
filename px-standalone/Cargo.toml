@@ -1,6 +1,6 @@
 [package]
 name = "port_scanner"
-version = "0.0.2"
+version = "0.0.9-devel"
 authors = ["Skarlett <zykl@protonmail.com>"]
 edition = "2018"
 
