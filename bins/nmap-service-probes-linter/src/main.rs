@@ -22,11 +22,12 @@ fn main() {
     
     let path = args.db.unwrap_or("/usr/share/nmap/nmap-service-probes".parse().unwrap());
     let print_flag = args.out;
+    
     if !path.is_file() {
         eprintln!("'{}' Isn't a file", path.to_string_lossy());
         return
     }
-    println!("reading path '{}'", path.to_str().unwrap());
+    eprintln!("reading path '{}'", path.to_str().unwrap());
     
     
     rt.block_on(async move {
@@ -34,13 +35,13 @@ fn main() {
 
         if let Err(why) = parse(&path.to_string_lossy(), &mut buf).await {
             dbg!(buf);
-            println!("{}", &why.error);
-            println!("col: {}, span: {}..{}", &why.cursor.col, &why.cursor.span.start, &why.cursor.span.end);
+            eprintln!("{}", &why.error);
+            eprintln!("col: {}, span: {}..{}", &why.cursor.col, &why.cursor.span.start, &why.cursor.span.end);
             return
         }
         if !print_flag {
-            println!("OK!")
+            eprintln!("OK!")
         }    
-        else { dbg!(buf); } 
+        else { println!("{:#?}", buf); } 
     })
 }

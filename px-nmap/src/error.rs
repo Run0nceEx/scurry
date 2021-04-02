@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use super::service_probe::parser::model::Token;
+use super::parsers::service_probes::model::Token;
 
 #[derive(Debug)]
 pub enum Error {
