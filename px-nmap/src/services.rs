@@ -10,7 +10,7 @@ use tokio::{
 };
 
 use std::path::Path;
-use crate::vscan::service_probe::model::Protocol;
+use crate::service_probe::model::Protocol;
 
 #[derive(Clone, Debug)]
 struct MapItem {

@@ -1,28 +1,12 @@
 [package]
 name = "px-core"
-version = "0.1.0"
+version = "0.0.9-devel"
 authors = ["Skarlett"]
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [lib]
 name = "px_core"
-
-#[features]
-#default = []
-#lua = "mlua"
-
-#[dependencies.mlua]
-#version = "0.4"
-#optional = true
-#features = ["lua53"]
-
-[dependencies.uuid]
-version = "0.8"
-features = ["v4"]
-
-[dependencies.anymap]
-version = "*"
 
 [dependencies.tokio]
 version = "1.2"
@@ -34,8 +18,7 @@ features = [
     "sync",
     "time",
     "fs",
-    "tracing",
-    "test-util"
+    "tracing"
 ]
 
 [dependencies.tokio-stream]
@@ -45,37 +28,32 @@ version = "0.1.3"
 version = "0.6.3"
 features = ["time"]
 
-[dependencies.serde]
-version = "1.0"
-features = ["derive"]
-
-[dependencies.smallvec]
-version = "1.6"
-features = ["serde"]
-
-[dependencies.regex]
-version = "1"
-features = ["perf"]
-
 [dependencies]
 # In-use dependencies
-tracing = "0.1.23"
 async-trait = "0.1"
 evc = "0.1.2"
-rand = "0.8.3"
 cidr-utils = "0.5"
-structopt = "0.3"
-serde_json = "1.0"
 num_cpus = "1.13"
-tokio-native-tls = "0.3.0"
-# hashbrown = "*"
+hashbrown = "*"
+smallvec = "*"
+rand = "*"
+serde = "*"
+
+px-common = { path = "../px-common" }
 
 # Dependency conflict patches
 syn = "^1.0.33"
 
+
+
 [dev-dependencies.criterion]
 version = "0.3"
 features = ["html_reports"]
+
+[dev-dependencies]
+tokio-test = "*"
+serde_derive = "*"
+tokio = { version = "*", features = ["rt-multi-thread", "test-util"]}
 
 [[bench]]
 name = "stats"

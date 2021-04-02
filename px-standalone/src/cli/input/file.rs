@@ -22,7 +22,7 @@ impl Iterator for InputFile {
 	type Item = AddressInput;
 
 	fn next(&mut self) -> Option<Self::Item> {
-		let mut line_count = 0;
+		let mut line_count: u32 = 0;
 		
 		loop {
 			if let Ok(nbytes) = self.reader.read_line(&mut self.line) {

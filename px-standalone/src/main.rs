@@ -55,9 +55,9 @@ fn main() -> Result<(), Error> {
 
 		if let OutputType::Map(map) = output_type {
 			match opt.format {
-				Format::Stdout => map.into_iter().for_each(|(key, service)| {
+				Format::Stdout => map.into_iter().for_each(|(key, services)| {
 					print!("{}", key);
-					service.iter().for_each(|s| println!("\t\t\t{}\t{}", s.port, s.state));
+					services.iter().for_each(|(port, netstate)| println!("\t\t\t{}\t{}", port, netstate));
 				}),
 				Format::Json => println!("{}", serde_json::to_string_pretty(&map).unwrap()),
 				Format::Stream => unreachable!() 

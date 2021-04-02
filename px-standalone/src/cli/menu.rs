@@ -7,7 +7,6 @@ use std::{
 	marker::Unpin
 };
 
-
 use px_core::{
 	pool::{Worker, Pool, CRON},
 	util::{Boundary, get_max_fd},

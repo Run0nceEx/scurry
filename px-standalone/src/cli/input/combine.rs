@@ -5,8 +5,8 @@ use super::parser::AddressInput;
 
 #[derive(Debug)]
 enum FeedItem<'a> {
-	IpAddr(IpAddrPortCombinator<'a>),
-	Cidr(CidrPortCombinator<'a>)
+	IpAddr(IpSpan<'a>),
+	Cidr(CidrSpan<'a>)
 }
 
 enum ExclusionItem {
@@ -27,9 +27,9 @@ impl<'a> Feeder<'a> {
 		for addr in address_input {
 			items.push(match addr {
 				AddressInput::CIDR(cidr) =>
-					FeedItem::Cidr(CidrPortCombinator::new(&cidr, ports)),
+					FeedItem::Cidr(CidrSpan::new(&cidr, ports)),
 				AddressInput::Singleton(ip) =>
-					FeedItem::IpAddr(IpAddrPortCombinator::new(*ip, ports)),
+					FeedItem::IpAddr(IpSpan::new(*ip, ports)),
 				_ => unimplemented!()
 			});
 		}
@@ -97,17 +97,18 @@ impl<'a> Feeder<'a> {
 }
 
 
+// TODO(adam) : Update using Combinators provided in library
 #[derive(Debug)]
-pub struct IpAddrPortCombinator<'a> {
+pub struct IpSpan<'a> {
 	ip: IpAddr,
 	ports: &'a [PortInput],
 	current_port_range: Option<std::ops::Range<u16>>,
 	i: usize
 }
 
-impl<'a> IpAddrPortCombinator<'a> {
+impl<'a> IpSpan<'a> {
 	pub fn new(ip: IpAddr, ports: &'a [PortInput]) -> Self {
-		Self {
+		IpSpan {
 			ip,
 			ports,
 			current_port_range: None,
@@ -116,7 +117,7 @@ impl<'a> IpAddrPortCombinator<'a> {
 	} 
 }
 
-impl<'a> Iterator for IpAddrPortCombinator<'a> {
+impl<'a> Iterator for IpSpan<'a> {
 	type Item = SocketAddr;
 
 	fn next(&mut self) -> Option<Self::Item> {
@@ -153,24 +154,24 @@ impl<'a> Iterator for IpAddrPortCombinator<'a> {
 }
 
 #[derive(Debug)]
-pub struct CidrPortCombinator<'a> {
+pub struct CidrSpan<'a> {
 	cidr: IpCidrIpAddrIterator,
-	inner: IpAddrPortCombinator<'a>
+	inner: IpSpan<'a>
 }
 
-impl<'a> CidrPortCombinator<'a> {
+impl<'a> CidrSpan<'a> {
     pub fn new(cidr: &IpCidr, ports: &'a [PortInput]) ->  Self {
         let mut rng = cidr.iter_as_ip_addr();
         let seed = rng.next().unwrap();
         
-        Self {
+        CidrSpan {
             cidr: rng,
-            inner: IpAddrPortCombinator::new(seed, ports)
+            inner: IpSpan::new(seed, ports)
         }
     }
 }
 
-impl<'a> Iterator for CidrPortCombinator<'a> {
+impl<'a> Iterator for CidrSpan<'a> {
 	type Item = SocketAddr;
 
 	fn next(&mut self) -> Option<Self::Item> {
@@ -178,7 +179,7 @@ impl<'a> Iterator for CidrPortCombinator<'a> {
 			Some(addr) => return Some(addr),
 			None => {
 				if let Some(ip) = self.cidr.next() {
-					self.inner = IpAddrPortCombinator::new(ip, self.inner.ports);
+					self.inner = IpSpan::new(ip, self.inner.ports);
 					return Some(self.inner.next().unwrap())
 				}
 				return None
@@ -198,7 +199,7 @@ mod test {
 	fn ip_generates_one() {
         let ports = &[PortInput::from_str("1").unwrap()];
 
-		let data = IpAddrPortCombinator::new(
+		let data = IpSpan::new(
 			"127.0.0.1".parse().unwrap(), 
 			ports
 		).next();
@@ -211,13 +212,11 @@ mod test {
 	fn ip_generates_many() {
         let ports = &[PortInput::from_str("1-5").unwrap()];
 
-		println!("PORTS: {:?}", ports);
-        let data: Vec<SocketAddr> = IpAddrPortCombinator::new(
+        let data: Vec<SocketAddr> = IpSpan::new(
 			"127.0.0.1".parse().unwrap(), 
 			ports
 		).collect();
         
-		println!("SOCKETS: {:?}", data);
 		for i in 1..5 {
 			assert!(data.contains(
 				&SocketAddr::new(
@@ -233,7 +232,7 @@ mod test {
 		let ports = &[PortInput::from_str("1-5").unwrap()];
 
 		println!("PORTS: {:?}", ports);
-        let data: Vec<SocketAddr> = CidrPortCombinator::new(
+        let data: Vec<SocketAddr> = CidrSpan::new(
 			&IpCidr::from_str("127.0.0.1/24").unwrap(),
 			ports
 		).collect();
@@ -266,7 +265,7 @@ mod test {
 	fn cidr_generates_one() {
 		let ports = &[PortInput::from_str("1").unwrap()];
 
-		let data = CidrPortCombinator::new(
+		let data = CidrSpan::new(
 			&IpCidr::from_str("127.0.0.1/32").unwrap(),
 			ports
 		).next();
