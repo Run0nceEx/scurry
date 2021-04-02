@@ -6,7 +6,10 @@ use structopt::StructOpt;
 #[derive(StructOpt, Debug)]
 struct CLI {
     #[structopt(parse(from_os_str))]
-    db: Option<PathBuf>
+    db: Option<PathBuf>,
+    
+    #[structopt(short)]
+    out: bool
 }
 
 fn main() {
@@ -18,7 +21,7 @@ fn main() {
         .unwrap();
     
     let path = args.db.unwrap_or("/usr/share/nmap/nmap-service-probes".parse().unwrap());
-
+    let print_flag = args.out;
     if !path.is_file() {
         eprintln!("'{}' Isn't a file", path.to_string_lossy());
         return
@@ -35,7 +38,9 @@ fn main() {
             println!("col: {}, span: {}..{}", &why.cursor.col, &why.cursor.span.start, &why.cursor.span.end);
             return
         }
-        
-        println!("OK!")
+        if !print_flag {
+            println!("OK!")
+        }    
+        else { dbg!(buf); } 
     })
 }

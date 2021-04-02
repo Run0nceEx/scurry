@@ -1,6 +1,6 @@
 [package]
 name = "px-core"
-version = "0.1.0"
+version = "0.0.9-devel"
 authors = ["Skarlett"]
 edition = "2018"
 
@@ -18,8 +18,7 @@ features = [
     "sync",
     "time",
     "fs",
-    "tracing",
-    "test-util"
+    "tracing"
 ]
 
 [dependencies.tokio-stream]
@@ -54,7 +53,7 @@ features = ["html_reports"]
 [dev-dependencies]
 tokio-test = "*"
 serde_derive = "*"
-tokio = { version = "*", features = ["rt-multi-thread"]}
+tokio = { version = "*", features = ["rt-multi-thread", "test-util"]}
 
 [[bench]]
 name = "stats"
