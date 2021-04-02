@@ -1,0 +1,65 @@
+[package]
+name = "px-core"
+version = "0.0.9-devel"
+authors = ["Skarlett"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+name = "px_core"
+
+[dependencies.tokio]
+version = "1.2"
+features = [
+    "parking_lot",
+    "net",
+    "time",
+    "rt",
+    "sync",
+    "time",
+    "fs",
+    "tracing"
+]
+
+[dependencies.tokio-stream]
+version = "0.1.3"
+
+[dependencies.tokio-util]
+version = "0.6.3"
+features = ["time"]
+
+[dependencies]
+# In-use dependencies
+async-trait = "0.1"
+evc = "0.1.2"
+cidr-utils = "0.5"
+num_cpus = "1.13"
+hashbrown = "*"
+smallvec = "*"
+rand = "*"
+serde = "*"
+
+px-common = { path = "../px-common" }
+
+# Dependency conflict patches
+syn = "^1.0.33"
+
+
+
+[dev-dependencies.criterion]
+version = "0.3"
+features = ["html_reports"]
+
+[dev-dependencies]
+tokio-test = "*"
+serde_derive = "*"
+tokio = { version = "*", features = ["rt-multi-thread", "test-util"]}
+
+[[bench]]
+name = "stats"
+path = "benches/pool.rs"
+harness = false
+
+[features]
+default = []
+include-tests = []
