@@ -30,10 +30,12 @@ fn main() {
         let mut buf = Vec::with_capacity(220);
 
         if let Err(why) = parse(&path.to_string_lossy(), &mut buf).await {
-            println!("{:#?}", why);
+            dbg!(buf);
+            println!("{}", &why.error);
+            println!("col: {}, span: {}..{}", &why.cursor.col, &why.cursor.span.start, &why.cursor.span.end);
             return
         }
         
-        //dbg!(buf);
+        println!("OK!")
     })
 }

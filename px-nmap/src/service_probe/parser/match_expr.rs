@@ -120,12 +120,14 @@ pub fn parse_match_expr(line_buf: &str, meta: &mut Meta) -> Result<MatchLineExpr
     //  cpe:/o:google:android/a
     //  cpe:/o:linux:linux_kernel/a
     // eprintln!("{}", &line_buf[offset+cpe_offset+1..]);
-    if offset == line_buf.trim().len() {
-        println!("NEEDS MORE POWA {},{}", offset, cpe_offset)
-        
-    }
-    parse_tail(&line_buf[offset+cpe_offset..].trim(), &mut service_data, &mut cpe_buf)?;
     
+    // eprintln!("{}", &line_buf[offset+cpe_offset+1..]); ??? I tohught +1?
+    //eprintln!("{},{},{},{},[{}]", offset, cpe_offset, line_buf.len(), line_buf.len() - (offset+cpe_offset), meta.col);
+    
+    if line_buf.len() - (offset+cpe_offset) > 0 {
+        parse_tail(&line_buf[offset+cpe_offset+1..].trim(), &mut service_data, &mut cpe_buf)?;
+    }
+
     Ok(MatchLineExpr {
         directive,
         name: name.to_string(),
@@ -141,6 +143,7 @@ pub struct RegexExpr {
     pub schematic: String,
     pub flags: [Flags; 2],
 }
+
 
 fn parse_regex(buf: &str) -> Result<(RegexExpr, usize), Error> {
     let mut cursor = buf.chars();
@@ -241,25 +244,40 @@ fn parse_field_delimited(data: &str) -> Result<((char, String), Option<&str>), E
     Ok(((head, schematic), tail))
 }
 
+//TODO(adam) bug fix
+//  CPE's need the ability to know of the `/a` sequence at the end of the CPE
+// **and**, with that, 
 fn parse_cpe_expr(data: &str) -> Result<(&str, Option<&str>), Error> {
     if data.starts_with("cpe:") {
         let mut schematic = String::with_capacity(256);
 
-        let mut chars = data.char_indices().skip(4);
+        let mut chars = data.trim().char_indices().skip(4);
         schematic.push_str("cpe:");
         
         let delim = chars.next().ok_or_else(|| Error::ParseError(String::from(
             "Expected delimitating character (probably a serviceinfo delimiter ex 'v/1.0/') but received None"
         )))?.1;
 
-        let idx = chars.take_while(|c| c.1 != delim).last().unwrap().0;
+        let mut tail_idx = chars.take_while(|c| c.1 != delim).last().unwrap().0;
+        //eprintln!("{:?}", &data[..tail_idx+1]);
+        if data[tail_idx+1..].len() > 1 {
+            let a_flag = data.chars().nth(tail_idx+2).unwrap();
+            if a_flag == 'a' {
+                tail_idx += 1;
+            }
+
+            //eprintln!("{}", &data.chars().nth(tail_idx+2).unwrap())
+        }
         
-        let tail = match &data[2+idx..].len() {
+        let tail = match &data[2+tail_idx..].len() {
             0 | 1 => None,
-            _ => Some(&data[2+idx..])
+            _ => Some(&data[2+tail_idx..])
         };
 
-        return Ok((&data[5..idx+1], tail))
+        if data.chars().nth(tail_idx+1).unwrap() == delim {
+            tail_idx -= 1;
+        }
+        return Ok((&data[5..tail_idx+2], tail))
     }
     else {
         return Err(Error::ParseError(format!(
@@ -280,9 +298,11 @@ fn parse_tail(mut buf: &str, expr: &mut ServiceInfoExpr, cpes: &mut SmallVec<[CP
     while buf.len() > 0 {
         match parse_cpe_expr(&buf) {
             Ok((cpe, tail)) => {
+                //eprintln!("{:?}, {:?}", cpe, tail);
+
                 cpes.push(CPExpr::new(DataField::from(cpe.to_string())));
                 match tail {
-                    Some(x) => buf = &x[1..],
+                    Some(tail) => buf = &tail[1..],
                     None => break
                 }
             },
