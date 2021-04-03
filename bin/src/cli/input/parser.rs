@@ -4,7 +4,7 @@ use std::{
 };
 
 use serde::Serialize;
-use px_core::model::PortInput;
+use px_core::common::port::PortInput;
 use cidr_utils::cidr::IpCidr;
 use crate::cli::error::Error;
 

@@ -34,7 +34,7 @@ version = "1.6"
 features = ["serde"]
 
 [dependencies]
-px-core = { path = "../px-core" }
+px-core = { path = "../crates/px-core" }
 
 async-trait = "0.1"
 cidr-utils = "0.5"

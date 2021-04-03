@@ -12,7 +12,7 @@ use px_core::{
 use crate::cli::input::parser;
 use serde::Serialize;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug)]
 pub enum OutputType {
 	Stream,
 	Map(HashMap<IpAddr, Vec<(u16, NetState)>>)

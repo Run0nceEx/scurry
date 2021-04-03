@@ -59,7 +59,7 @@ fn main() -> Result<(), Error> {
 					print!("{}", key);
 					services.iter().for_each(|(port, netstate)| println!("\t\t\t{}\t{}", port, netstate));
 				}),
-				Format::Json => println!("{}", serde_json::to_string_pretty(&map).unwrap()),
+				Format::Json => unimplemented!(), //println!("{}", serde_json::to_string_pretty(&map).unwrap()),
 				Format::Stream => unreachable!() 
 			}
 		}
