@@ -1,12 +1,11 @@
 use std::{
-    borrow::Borrow,
-    str::{FromStr},
+    str::FromStr,
     time::Duration
 };
-use regex::{bytes::Match, bytes::Matches};
+use regex::bytes::{Match, Matches};
 use bincode::Options;
 
-use px_common::netport::PortInput;
+use px_common::port::PortInput;
 
 use logos::{Logos, Lexer};
 

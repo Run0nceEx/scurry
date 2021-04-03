@@ -1,6 +1,6 @@
 
 use regex::bytes::RegexSet;
-use px_common::netport::PortInput;
+use px_common::port::PortInput;
 
 use crate::parsers::service_probes::{
     model::{ProbeExpr, Protocol},
@@ -13,6 +13,7 @@ use std::{
     cmp::Ordering,
     collections::HashMap
 };
+
 use crate::parsers::construct_payload;
 use regex::Regex;
 

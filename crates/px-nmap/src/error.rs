@@ -9,7 +9,7 @@ pub enum Error {
     ParseError(String),
     ExpectedToken(Token),
     IO(tokio::io::Error),
-    PortParser(px_common::netport::Error),
+    PortParser(px_common::port::Error),
     Bincode(Box<bincode::ErrorKind>)
 }
 #[derive(Debug, Clone)]
@@ -25,8 +25,8 @@ impl From<tokio::io::Error> for Error {
     }
 }
 
-impl From<px_common::netport::Error> for Error {
-    fn from(e: px_common::netport::Error) -> Self {
+impl From<px_common::port::Error> for Error {
+    fn from(e: px_common::port::Error) -> Self {
         Self::PortParser(e)
     }
 }

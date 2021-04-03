@@ -20,7 +20,7 @@ trait NetworkInterface {
 
 trait Probe<T> {
     // T = probe data - Probe<Minecraft>, Probe<Ssh>
-    async fn probe_service<I: NetworkInterface>(&mut self, iface: &mut I) -> Option<T>
+    async fn probe_service<I: NetworkInterface>(&mut self, iface: &mut I) -> Option<T>;
 }
 
 
