@@ -1,22 +1,9 @@
 # scurry: High performance Port scanning tool
 [![Build Status](https://travis-ci.org/Skarlett/scurry.svg?branch=master)](https://travis-ci.org/Skarlett/scurry)
 [![asciicast](https://asciinema.org/a/6RsstnYyovWmVCjYLdgYADMG0.svg)](https://asciinema.org/a/6RsstnYyovWmVCjYLdgYADMG0)
-Scurry attempts to identify services running behind ports, much in the same fashion nmap does. 
 
-Built ontop of the [tokio runtime](https://tokio.rs), Scurry's priority is to build a fast concurrent service discovery tool.
-While still maintaining the accuracy of nmap. 
-
-### Scurry is in active developement
-Scurry is being developed as a seperate engine to nmap.
-Scurry is **not a drop in replacement** for nmap. Though nmap scripts are planned to be compatiable with scurry, they are not currently.
-
-## Planned
-Heres some that I plan on delivering on a later date.
-
-feature | integrated
---- | ---
-Nmap Version Detection | N/A
-Compatible witth Nmap scripts (luaJIT) | N/A
+## Abstract
+Scurry is an **experimental** utility that performs network discovery, and security auditing. Likewise to the project [nmap](https://nmap.org/), Scurry attempts to build out similar functionality, including the adoption of nmap's ecosystem. Nmap has been the industry standard for many years, and has a vast ecosystem of lua libraries. Scurry does not aim to replicate/replace nmap. 
 
 ##  Compiling
 https://rustup.rs/ (Install compiler) and select **nightly**
@@ -52,3 +39,18 @@ OPTIONS:
         --threads <threads>          
         --timeout <timeout>          Specify output format [env: SCURRY_TIMEOUT=]  [default: 5]
 ```
+
+## Contribution
+Please review the license, follow our contribution guide, and take a look at our roadmap. If you wish to change the road map, propose it in an issue. 
+
+
+## Implementation choices
+
+### Lanuage
+Most of the tooling choosen in this project originates from two primary concerns, performance and scaling ability. The reason I've choosen rust as the primary language for writing this project is because it facilitates these properties. 
+
+The type system in rust, with its borrow checking should allow us to write code that both ensures it will run, and that "special" knowledge isn't needed to modify its source code. The elaborate on the term "special knowledge" - I would like to example the case of a C program, where type dynamic casting is provided. This implicates that you now need to read and understand behavior outside of the feature your implementing.
+
+Reading code outside of what feature you're implementing to examine its behavior - just to predict how to write your own code, *in my opinion* is a waste of time. This is exactly what "special knowledge" is. Rust isn't perfect, but with its rich type system, we can reliably ignore behavior outside of our own code due to its correct/safe nature. 
+
+In theory this should be easier for developers to contribute code to the project.
