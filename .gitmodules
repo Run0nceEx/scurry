@@ -1,0 +1,3 @@
+[submodule "crates/cidr-utils"]
+	path = crates/cidr-utils
+	url = https://github.com/Skarlett/cidr-utils
