@@ -1,8 +1,10 @@
 [workspace]
 members = [
-  "px-core",
-  "px-nmap",
-  # "px-standalone",
-  "px-common",
-  "nmap-service-probes-linter"
+  "crates/px-core",
+  "crates/px-nmap",
+  "crates/px-common",
+  "crates/px-lua",
+#  "crates/px-capsule",
+  "bin/nmap-service-probes-linter",
+  "bin/port_scanner"
 ]
