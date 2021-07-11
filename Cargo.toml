@@ -4,7 +4,7 @@ members = [
   "crates/px-nmap",
   "crates/px-common",
   "crates/px-lua",
-  "crates/px-capsule",
-  "util/nmap-service-probes",
-  "bin"
+#  "crates/px-capsule",
+  "bin/nmap-service-probes-linter",
+  "bin/port_scanner"
 ]

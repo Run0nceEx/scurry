@@ -1,6 +1,6 @@
 [package]
 name = "px-lua"
-version = "0.0.9-devel"
+version = "0.0.10-devel"
 authors = ["Skarlett <zykl@protonmail.com>"]
 edition = "2018"
 

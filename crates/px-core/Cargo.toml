@@ -1,6 +1,6 @@
 [package]
 name = "px-core"
-version = "0.0.9-devel"
+version = "0.0.10-devel"
 authors = ["Skarlett"]
 edition = "2018"
 
@@ -43,8 +43,6 @@ px-common = { path = "../px-common" }
 
 # Dependency conflict patches
 syn = "^1.0.33"
-
-
 
 [dev-dependencies.criterion]
 version = "0.3"

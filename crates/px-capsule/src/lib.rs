@@ -1,21 +1,3 @@
-/*
-* Copyright 2019 Comcast Cable Communications Management, LLC
-*
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-*
-* http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
-*
-* SPDX-License-Identifier: Apache-2.0
-*/
-
 use anyhow::Result;
 use capsule::batch::{Batch, Pipeline, Poll};
 use capsule::config::load_config;
@@ -90,17 +72,17 @@ fn install(q: PortQueue) -> impl Pipeline {
         .send(q)
 }
 
-fn main() -> Result<()> {
-    let subscriber = fmt::Subscriber::builder()
-        .with_max_level(Level::DEBUG)
-        .finish();
-    tracing::subscriber::set_global_default(subscriber)?;
+// fn main() -> Result<()> {
+//     let subscriber = fmt::Subscriber::builder()
+//         .with_max_level(Level::DEBUG)
+//         .finish();
+//     tracing::subscriber::set_global_default(subscriber)?;
 
-    let config = load_config()?;
-    debug!(?config);
+//     let config = load_config()?;
+//     debug!(?config);
 
-    Runtime::build(config)?
-        .add_pipeline_to_port("eth1", install)?
-        .add_pipeline_to_port("eth2", install)?
-        .execute()
-}
+//     Runtime::build(config)?
+//         .add_pipeline_to_port("eth1", install)?
+//         .add_pipeline_to_port("eth2", install)?
+//         .execute()
+// }

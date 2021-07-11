@@ -259,14 +259,12 @@ fn parse_cpe_expr(data: &str) -> Result<(&str, Option<&str>), Error> {
         )))?.1;
 
         let mut tail_idx = chars.take_while(|c| c.1 != delim).last().unwrap().0;
-        //eprintln!("{:?}", &data[..tail_idx+1]);
+
         if data[tail_idx+1..].len() > 1 {
             let a_flag = data.chars().nth(tail_idx+2).unwrap();
             if a_flag == 'a' {
                 tail_idx += 1;
             }
-
-            //eprintln!("{}", &data.chars().nth(tail_idx+2).unwrap())
         }
         
         let tail = match &data[2+tail_idx..].len() {
@@ -279,6 +277,7 @@ fn parse_cpe_expr(data: &str) -> Result<(&str, Option<&str>), Error> {
         }
         return Ok((&data[5..tail_idx+2], tail))
     }
+    
     else {
         return Err(Error::ParseError(format!(
             "got '{:?}' but expected sequence: 'cpe:/.../'", data  
